@@ -1,9 +1,34 @@
 # PodClatch
 
-A personal, single-user podcast player for Android built around a queue that fills itself. Subscribe to feeds, rank them by priority, pick a listen order per feed, and PodClatch downloads and queues the next episodes automatically.
+## Introduction
 
-Native Android (Kotlin, Jetpack Compose, Media3). See [podclatch-spec.md](podclatch-spec.md) for the full product specification.
+Podclatch is a personal, single-user podcast player for Android built around a queue that fills itself. The user subscribes to feeds, ranks them by priority, sets a listen order for each feed, and PodClatch downloads and queues episodes automatically.  
+
+PodClatch has two parts:
+
+- **PodClatch Android app** (`android/`): native Android (Kotlin, Jetpack Compose, Media3). It plays episodes, builds the queue, downloads audio directly from the podcasts' publishers, and works offline from a local cache. It also supports Android Auto.
+- **PodClatch Server** (`server/`): a small single-user web service (Python, FastAPI, Postgres). It searches for podcasts, fetches and refreshes their RSS feeds on a schedule, and stores the user's subscriptions, feed priorities, listen orders, and played/new state, so that state survives and syncs. There are no user accounts, only one access token.
+
+See `_docs/podclatch-spec.md` for the full product specification.
+
+This app was developed partly as a means to pass a class, and its development process was crafted to align with [the class's document on scoring criteria](https://github.com/DataTalksClub/ai-dev-tools-zoomcamp/tree/main/project#criteria).  
+
+
+### The problem being solved
+
+There are a few problems being solved by the creation of this app:
+- The user's current favorite podcast player is no longer maintained nor offered in the Google app store, so the user fears that it will likely become unusable at some point.  
+- That prior app disappoints the user in a few ways, enumerated below, that the user hopes to improve upon.
+
+Since one of the goals of this project was to displace the user's favorite podcast player, it should be noted that the user's current favorite podcast player (referred to herein as "the prior app") was not directly used as the basis of the specification for the new app, except that the behavior of the queue in the new app was indeed designed to mimic the behavior that the user liked in how the user's current favorite app managed its queue. Otherwise, the user simply asked the agent for a spec to build his own podcast player app, and then requested some changes to that generic specification. 
+
+
+#### Disappointments in the other app to be improved upon
+- When a new feed is subscribed, the prior app assigns it last priority. The user wants the opposite. When subscribing to a new feed, the user usually wants to hear episodes from that feed before any others, so the user wants it added with top priority.  
+- Every time the prior app connects to Android Auto, it switches from the user's preferred and populated queue to another queue that the user never uses.  Consequently, nothing is queued when the episode in progress finishes, and the user has to manually switch back to the desired queue.  The new app has only the one desired queue.  
+- Although the user prefers to listen at an accelerated playback speed, the user's wife dislikes the fast talking, and the prior app, in Android Auto mode, does not provide an easy way to change the playback speed to enable the user to accommodate his wife.  The user's new app has a convenient one-touch playback speed toggle to make it easy to satisfy the wife when she is in the car, and the user when she is not. 
+
 
 ## Status
 
-Pre-development: only the specification exists so far.
+Pre-development: only the specification and the agent-team documents exist so far. The feature list, screenshots, and run steps will be added when the app and server exist.

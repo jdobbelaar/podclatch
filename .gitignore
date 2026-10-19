@@ -25,3 +25,6 @@ google-services.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Internal notes, not for the repo
+_internal/
