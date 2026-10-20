@@ -43,6 +43,34 @@ Run these from `server/`:
 6. Run the tests: `uv run pytest`
 7. Run the linter: `uv run ruff check .`
 
+### Running the server with Docker Compose
+
+This starts the server and its Postgres together. Run these from the repository root.
+
+**Prerequisites.** Docker Desktop, or Docker Engine with Compose v2. GNU make is optional: every `make` target is one plain `docker compose` command, listed in the table below. Git Bash does not ship make; on Windows install it with `winget install GnuWin32.Make` or `choco install make`.
+
+**First run.**
+
+1. `cp .env.example .env` (on PowerShell: `Copy-Item .env.example .env`).
+2. Edit `.env` and set `PODCLATCH_TOKEN` (the access token the app presents) and `POSTGRES_PASSWORD`. Both are empty in the example on purpose, and the stack refuses to start while either is empty. The password is placed inside the database URL, so use only letters, digits, `-`, and `_`; percent-encode any other character. `.env` is git-ignored; never commit it.
+3. `make up` builds the image, starts both services, and returns once both are healthy.
+4. Check it (use your token; replace 8180 if you set `PODCLATCH_PORT`):
+   - `curl -i http://localhost:8180/healthz` returns 200 and `{"status":"ok"}`.
+   - `curl -i -H "Authorization: Bearer <your token>" http://localhost:8180/v1/feeds` returns 200 and `[]` on a fresh volume.
+   - `curl -i http://localhost:8180/v1/feeds` (no token) returns 401 with `{"detail":"Not authenticated."}`.
+
+| Target | Raw command | What it does |
+| --- | --- | --- |
+| `make up` | `docker compose up -d --build --wait` | Build, start, and wait until both services are healthy |
+| `make down` | `docker compose down` | Remove the containers and network; the Postgres data is kept |
+| `make logs` | `docker compose logs -f server postgres` | Follow the logs |
+| `make test` | `docker compose -f docker-compose.test.yaml run --rm --build test` | Run the server tests in a container |
+| `make clean` | `docker compose down -v --remove-orphans` | Also delete the Postgres volume: **this erases all data** |
+
+**Ports.** The server listens on `127.0.0.1:8180` by default. It is not 8000 because other local projects commonly use 8000 (and 3000, 9090, 5432, and 5433, which this setup also avoids). Set `PODCLATCH_PORT` in `.env` to change it. It is bound to loopback only; to reach it from a phone on your LAN, set `PODCLATCH_BIND_ADDRESS=0.0.0.0` (anyone on the network can then reach the token-protected API, so only do this on a network you trust). Postgres is not published to the host by default. To open it for debugging, add the override file, which publishes it on `127.0.0.1:5442` (change with `PODCLATCH_POSTGRES_PORT`): `docker compose -f docker-compose.yaml -f docker-compose.debug.yaml up -d`, then `psql -h localhost -p 5442 -U podclatch podclatch`.
+
+**Tests.** `make test` runs the server tests (SQLite) in a container, so it needs only Docker and no `.env`. The host-side `uv run pytest` above still works and is unchanged.
+
 ## Known limitations
 
 These are deliberate trade-offs for a single-user app, recorded so they are not mistaken for oversights.

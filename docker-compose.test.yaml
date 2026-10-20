@@ -1,0 +1,11 @@
+# Runs the server test suite (SQLite) in a container. Needs no .env.
+#   docker compose -f docker-compose.test.yaml run --rm --build test
+name: podclatch-test
+
+services:
+  test:
+    build:
+      context: server
+      dockerfile: Dockerfile
+      target: test
+    image: podclatch-server-test:local

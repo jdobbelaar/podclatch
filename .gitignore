@@ -31,3 +31,7 @@ _internal/
 
 # Written by Android Studio; machine-specific
 android/gradle/gradle-daemon-jvm.properties
+
+# Docker Compose secrets
+.env
+!.env.example

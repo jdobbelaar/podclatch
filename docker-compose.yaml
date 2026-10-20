@@ -1,0 +1,39 @@
+# PodClatch Server and its Postgres. Needs a root .env (copy .env.example); see README.
+name: podclatch
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-podclatch}
+      POSTGRES_DB: ${POSTGRES_DB:-podclatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set - copy .env.example to .env and set it}
+    volumes:
+      - podclatch-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  server:
+    build:
+      context: server
+      dockerfile: Dockerfile
+    image: podclatch-server:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-podclatch}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is not set - copy .env.example to .env and set it}@postgres:5432/${POSTGRES_DB:-podclatch}
+      PODCLATCH_TOKEN: ${PODCLATCH_TOKEN:?PODCLATCH_TOKEN is not set - copy .env.example to .env and set it}
+      REFRESH_INTERVAL_HOURS: ${REFRESH_INTERVAL_HOURS:-3}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${PODCLATCH_BIND_ADDRESS:-127.0.0.1}:${PODCLATCH_PORT:-8180}:8000"
+
+volumes:
+  podclatch-pgdata:
