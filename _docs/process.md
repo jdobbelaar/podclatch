@@ -1,5 +1,3 @@
-THIS DOCUMENT IS MERELY A DRAFT IN PROGRESS AND IS NOT YET MEANT TO BE USED TO DRIVE PROCESS. 
-
 Work in isolated git worktrees and run up to three agents in parallel.
 
 You are the orchestrator. Your job is to:

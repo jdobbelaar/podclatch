@@ -1,5 +1,3 @@
-THIS DOCUMENT IS MERELY A DRAFT IN PROGRESS AND IS NOT YET MEANT TO BE USED TO GUIDE ANY AGENT. 
-
 # PodClatch
 
 A personal, single-user podcast player: a native Android app (Kotlin, Jetpack Compose, Media3) plus a small Python web service, **PodClatch Server** (FastAPI, Postgres), that holds the user's subscriptions and state. The Android app caches everything for offline use, downloads audio directly from publishers, and does all playback. The product spec is the source of truth; if code and spec disagree, follow the spec or raise it on the issue.
