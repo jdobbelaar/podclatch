@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_SCHEMES = ("sqlite", "postgresql", "postgres", "postgresql+psycopg")
 BUSY_TIMEOUT_SECONDS = 60
+CONNECT_TIMEOUT_SECONDS = 10  # Postgres: fail startup instead of hanging on an unreachable host
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # Execution option set on a connection that will write; `begin` then takes the SQLite write lock.
@@ -121,7 +122,7 @@ def create_db_engine(database_url: str, connect_args: dict[str, Any] | None = No
             pool_size=10,
             max_overflow=30,
             isolation_level="READ COMMITTED",
-            connect_args=connect_args or {},
+            connect_args={"connect_timeout": CONNECT_TIMEOUT_SECONDS, **(connect_args or {})},
         )
     return engine
 

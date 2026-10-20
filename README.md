@@ -38,6 +38,8 @@ Run these from `server/`:
 3. `cp .env.example .env`, then set `PODCLATCH_TOKEN` in `.env` to a token of your choosing. The server refuses to start without one.
 4. Load the variables and start the server: `set -a; . ./.env; set +a; uv run uvicorn --factory podclatch_server.app:create_app`
 5. Check it: `curl http://localhost:8000/healthz` returns `{"status":"ok"}`.
+
+   The server keeps its data in a database and creates or upgrades the schema by itself at startup (no migration command). By default that is the SQLite file `server/podclatch.db` (git-ignored; run from `server/`, or the file is created in whatever directory you start from). To use Postgres, set `DATABASE_URL=postgresql://user:password@host:5432/dbname`. To also run the tests against Postgres, set `PODCLATCH_TEST_DATABASE_URL` to a running database before `uv run pytest`; each test uses its own temporary schema, and without the variable the Postgres tests are skipped.
 6. Run the tests: `uv run pytest`
 7. Run the linter: `uv run ruff check .`
 

@@ -19,3 +19,42 @@ jobs:
       - run: uv sync
       - run: uv run pytest
       - run: uv run ruff check .
+
+  test-postgres:
+    # The same suite, with PODCLATCH_TEST_DATABASE_URL set: every test runs against Postgres and
+    # the store-contract tests run on both backends. Each test gets its own throwaway schema.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: podclatch
+          POSTGRES_PASSWORD: ci-throwaway-password  # a throwaway container; not a secret
+          POSTGRES_DB: podclatch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U podclatch -d podclatch_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PODCLATCH_TEST_DATABASE_URL: postgresql://podclatch:ci-throwaway-password@localhost:5432/podclatch_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync
+      - name: Run the tests against Postgres
+        run: |
+          uv run pytest -v -rs 2>&1 | tee pytest-postgres.log
+          # The Postgres tests must have run, not been skipped.
+          passed=$(grep -c "\[postgres\] PASSED" pytest-postgres.log)
+          echo "Postgres store tests passed: $passed"
+          test "$passed" -gt 0
+          ! grep -q "PODCLATCH_TEST_DATABASE_URL is not set" pytest-postgres.log
+      - run: uv run ruff check .

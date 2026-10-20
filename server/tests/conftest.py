@@ -116,6 +116,11 @@ class CheckedStore:
     def __init__(self, store: SqlStore) -> None:
         self._store = store
 
+    @property
+    def raw(self) -> SqlStore:
+        """The wrapped store (for the test seam and direct database access)."""
+        return self._store
+
     def __getattr__(self, name: str) -> Any:
         attribute = getattr(self._store, name)
         if name not in self._MUTATIONS:
@@ -148,6 +153,7 @@ def new_store(store_kind, databases) -> Callable[[], Store]:
 
     def make() -> Store:
         url, connect_args = databases.new_location(store_kind)
+        make.last_location = (url, connect_args)  # type: ignore[attr-defined]
         return CheckedStore(databases.track(REAL_OPEN_STORE(url, connect_args)))  # type: ignore[return-value]
 
     return make
