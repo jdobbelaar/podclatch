@@ -17,7 +17,7 @@ from enum import StrEnum
 from typing import Protocol
 from urllib.parse import urlsplit
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 
 from podclatch_server.errors import ConflictError, NotFoundError, UnprocessableError
 from podclatch_server.feeds import ParsedFeed
@@ -83,6 +83,50 @@ class Tombstone:
     rev: int
 
 
+class StateOutcome(StrEnum):
+    APPLIED = "APPLIED"
+    STALE = "STALE"
+    UNKNOWN_EPISODE = "UNKNOWN_EPISODE"
+
+
+@dataclass(frozen=True)
+class EpisodeStateChange:
+    """One requested Episode state change (already validated)."""
+
+    episode_id: int
+    status: EpisodeStatus
+    played_at: int | None
+    position_sec: int
+    state_updated_at: int
+
+
+@dataclass(frozen=True)
+class EpisodeStateResult:
+    """Outcome of one change. The state fields hold the Episode's stored state after it."""
+
+    episode_id: int
+    outcome: StateOutcome
+    status: EpisodeStatus | None = None
+    played_at: int | None = None
+    position_sec: int | None = None
+    state_updated_at: int | None = None
+
+
+@dataclass(frozen=True)
+class SyncPage:
+    feeds: list[Feed]
+    episodes: list[Episode]
+    tombstones: list[Tombstone]
+    next_rev: int
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class RefreshApplied:
+    inserted: int  # Episodes inserted
+    feed_changed: bool  # title, author, description, or artwork changed (the Feed took a new rev)
+
+
 class Store(Protocol):
     """Everything the routes and tests need. Returned values are frozen copies."""
 
@@ -127,6 +171,40 @@ class Store(Protocol):
 
     def list_tombstones(self) -> list[Tombstone]:
         """Every Tombstone in the order it was written."""
+        ...
+
+    def get_feed(self, feed_id: int) -> Feed | None:
+        """The Feed with this id, else None."""
+        ...
+
+    def list_feed_episodes(self, feed_id: int) -> list[Episode]:
+        """The Feed's Episodes by publishedAt descending, ties by id descending.
+
+        Raises NotFoundError for an unknown Feed id.
+        """
+        ...
+
+    def apply_episode_states(self, changes: list[EpisodeStateChange]) -> list[EpisodeStateResult]:
+        """Apply the changes in order, last-write-wins, as one atomic operation.
+
+        A change is APPLIED only if its `state_updated_at` is strictly greater than the stored
+        one (and takes the next `rev`); otherwise STALE. An unknown Episode is UNKNOWN_EPISODE.
+        Returns one result per change, in order.
+        """
+        ...
+
+    def sync_page(self, since: int, limit: int) -> SyncPage:
+        """Feeds, Episodes, and Tombstones with `rev > since`, ascending by rev, at most `limit`
+        items in total, read as one consistent snapshot."""
+        ...
+
+    def apply_refresh(self, feed_id: int, parsed: ParsedFeed, now_ms: int) -> RefreshApplied | None:
+        """Apply a successful fetch to a Feed as one atomic operation.
+
+        Inserts Episodes whose guid is not yet stored (as New), replaces the Feed metadata
+        (a new `rev` only if it changed), and sets `last_refreshed_at`. Known Episodes are not
+        touched. Returns None, changing nothing, if the Feed no longer exists.
+        """
         ...
 
 
@@ -280,14 +358,127 @@ class InMemoryStore:
         with self._lock:
             return list(self._tombstones)
 
+    def get_feed(self, feed_id: int) -> Feed | None:
+        with self._lock:
+            return self._feeds.get(feed_id)
+
+    def list_feed_episodes(self, feed_id: int) -> list[Episode]:
+        with self._lock:
+            if feed_id not in self._feeds:
+                raise NotFoundError(FEED_NOT_FOUND_DETAIL)
+            episodes = [e for e in self._episodes.values() if e.feed_id == feed_id]
+        return sorted(episodes, key=lambda e: (e.published_at, e.id), reverse=True)
+
+    def apply_episode_states(self, changes: list[EpisodeStateChange]) -> list[EpisodeStateResult]:
+        results: list[EpisodeStateResult] = []
+        with self._lock:
+            for change in changes:
+                episode = self._episodes.get(change.episode_id)
+                if episode is None:
+                    results.append(
+                        EpisodeStateResult(change.episode_id, StateOutcome.UNKNOWN_EPISODE)
+                    )
+                    continue
+                outcome = StateOutcome.STALE
+                if change.state_updated_at > episode.state_updated_at:
+                    outcome = StateOutcome.APPLIED
+                    episode = replace(
+                        episode,
+                        status=change.status,
+                        played_at=change.played_at,
+                        position_sec=change.position_sec,
+                        state_updated_at=change.state_updated_at,
+                        rev=self._bump(),
+                    )
+                    self._episodes[episode.id] = episode
+                results.append(
+                    EpisodeStateResult(
+                        episode.id,
+                        outcome,
+                        episode.status,
+                        episode.played_at,
+                        episode.position_sec,
+                        episode.state_updated_at,
+                    )
+                )
+        return results
+
+    def sync_page(self, since: int, limit: int) -> SyncPage:
+        with self._lock:
+            items: list[Feed | Episode | Tombstone] = [
+                *(f for f in self._feeds.values() if f.rev > since),
+                *(e for e in self._episodes.values() if e.rev > since),
+                *(t for t in self._tombstones if t.rev > since),
+            ]
+        items.sort(key=lambda item: item.rev)
+        page = items[:limit]
+        return SyncPage(
+            feeds=[i for i in page if isinstance(i, Feed)],
+            episodes=[i for i in page if isinstance(i, Episode)],
+            tombstones=[i for i in page if isinstance(i, Tombstone)],
+            next_rev=page[-1].rev if page else since,
+            has_more=len(items) > len(page),
+        )
+
+    def apply_refresh(self, feed_id: int, parsed: ParsedFeed, now_ms: int) -> RefreshApplied | None:
+        with self._lock:
+            feed = self._feeds.get(feed_id)
+            if feed is None:
+                return None
+            changed = (feed.title, feed.author, feed.description, feed.artwork_url) != (
+                parsed.title,
+                parsed.author,
+                parsed.description,
+                parsed.artwork_url,
+            )
+            self._feeds[feed_id] = replace(
+                feed,
+                title=parsed.title,
+                author=parsed.author,
+                description=parsed.description,
+                artwork_url=parsed.artwork_url,
+                last_refreshed_at=now_ms,
+                rev=self._bump() if changed else feed.rev,
+            )
+            inserted = 0
+            for item in parsed.episodes:
+                if (feed_id, item.guid) in self._episode_keys:  # re-checked under the lock
+                    continue
+                episode = Episode(
+                    id=self._next_episode_id,
+                    feed_id=feed_id,
+                    guid=item.guid,
+                    title=item.title,
+                    description=item.description,
+                    audio_url=item.audio_url,
+                    published_at=item.published_at,
+                    duration_sec=item.duration_sec,
+                    artwork_url=item.artwork_url,
+                    status=EpisodeStatus.NEW,
+                    played_at=None,
+                    position_sec=0,
+                    state_updated_at=item.published_at,
+                    rev=self._bump(),
+                )
+                self._next_episode_id += 1
+                self._episodes[episode.id] = episode
+                self._episode_keys.add((feed_id, episode.guid))
+                inserted += 1
+            return RefreshApplied(inserted=inserted, feed_changed=changed)
+
 
 _creation_lock = threading.Lock()
 
 
-def get_store(request: Request) -> Store:
-    """FastAPI dependency: the app's one store, created on first use (so each app starts empty)."""
-    state = request.app.state
+def store_for_app(app: FastAPI) -> Store:
+    """The app's one store, created on first use (so each app starts empty)."""
+    state = app.state
     with _creation_lock:
         if getattr(state, "store", None) is None:
             state.store = InMemoryStore()
         return state.store
+
+
+def get_store(request: Request) -> Store:
+    """FastAPI dependency: the app's one store."""
+    return store_for_app(request.app)
