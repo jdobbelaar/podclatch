@@ -94,3 +94,27 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  integration:
+    # The end-to-end suite in server/tests_integration/ against the real Compose stack plus the
+    # fake feed host. The pytest session starts the stack, prints its logs when something failed,
+    # and removes it; the last step is a safety net. The token and password are generated at run
+    # time and masked; they are not secrets in the repository.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create a throwaway .env
+        run: |
+          token=$(openssl rand -hex 16)
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$token"
+          echo "::add-mask::$password"
+          printf 'PODCLATCH_TOKEN=%s\nPOSTGRES_PASSWORD=%s\n' "$token" "$password" > .env
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Run the integration tests
+        run: make test-integration
+      - name: Tear down the integration stack
+        if: always()
+        run: docker compose -p podclatch-it -f docker-compose.yaml -f docker-compose.integration.yaml down -v --remove-orphans

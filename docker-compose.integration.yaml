@@ -1,0 +1,31 @@
+# Integration test overlay: adds a fake feed host and keeps the scheduler quiet. Used only by the
+# pytest session in server/tests_integration/, always as the project `podclatch-it`:
+#   docker compose -p podclatch-it -f docker-compose.yaml -f docker-compose.integration.yaml up -d --build --wait
+services:
+  feedhost:
+    image: python:3.12-slim
+    user: "10001:10001"
+    command: ["python", "-u", "/srv/fakehost.py"]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./server/tests_integration/fakehost.py:/srv/fakehost.py:ro
+    ports:
+      - "127.0.0.1::8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 2s
+
+  server:
+    depends_on:
+      feedhost:
+        condition: service_healthy
+    environment:
+      REFRESH_INTERVAL_HOURS: "24"
