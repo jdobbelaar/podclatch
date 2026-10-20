@@ -1,0 +1,35 @@
+{
+  "resultCount": 5,
+  "results": [
+    {
+      "wrapperType": "track",
+      "kind": "podcast",
+      "collectionName": "  Example History Podcast ",
+      "artistName": "Example Media",
+      "feedUrl": "https://example.com/feeds/history.xml",
+      "artworkUrl600": "https://example.com/art/history-600.jpg",
+      "trackName": "Example History Podcast",
+      "genres": ["History", "Podcasts"]
+    },
+    {
+      "collectionName": "No Feed Podcast",
+      "artistName": "Nobody",
+      "artworkUrl600": "https://example.com/art/nofeed-600.jpg"
+    },
+    {
+      "collectionName": null,
+      "feedUrl": "https://example.com/feeds/sparse.xml"
+    },
+    {
+      "collectionName": "Extras Podcast",
+      "artistName": "Extra Author",
+      "feedUrl": "https://example.com/feeds/extras.xml",
+      "artworkUrl600": "https://example.com/art/extras-600.jpg",
+      "artworkUrl100": "https://example.com/art/extras-100.jpg",
+      "primaryGenreName": "Comedy",
+      "trackCount": 12,
+      "releaseDate": "2026-01-01T00:00:00Z"
+    },
+    "not an object"
+  ]
+}
