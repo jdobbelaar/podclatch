@@ -9,6 +9,18 @@ info:
     64-bit integers. All timestamps are UTC epoch milliseconds. The server
     never fetches, stores, or serves podcast audio; `Episode.audioUrl` points
     at the publisher.
+
+    Authentication: send `Authorization: Bearer <token>` (the scheme is
+    case-insensitive). The token is checked before the request body and
+    parameters are validated, so a missing or wrong token gets 401 even when
+    the body is malformed JSON or a parameter is invalid.
+
+    Undefined routes: a request to an undefined path returns 404, and an
+    undefined method on a defined path (for example `GET /v1/refresh`,
+    `GET /v1/episodes/state`, or `DELETE /v1/feeds/{id}/episodes`) returns 405
+    with an `Allow` header. Both have the body `{"detail": "<string>"}` and
+    neither is checked for a token. These responses are not declared on each
+    operation.
 tags:
   - name: health
     description: Liveness check.
@@ -51,15 +63,20 @@ paths:
       description: |
         Proxies an iTunes podcast search (at most 25 results). Results are
         cached in memory for 10 minutes per query. An iTunes failure returns
-        502 with a clear message.
+        502 with a clear message. A 422 (see `q`) makes no request to iTunes.
       parameters:
         - name: q
           in: query
           required: true
-          description: Search term.
+          description: |
+            Search term. Surrounding whitespace is trimmed first. A `q` that is
+            empty or whitespace-only is rejected with 422. A `q` longer than 200
+            characters after trimming is rejected with 422; `maxLength` is the
+            limit the client should respect after trimming.
           schema:
             type: string
             minLength: 1
+            maxLength: 200
           example: history
       responses:
         "200":
@@ -272,8 +289,9 @@ paths:
       tags: [episodes]
       summary: List a Feed's Episodes
       description: |
-        Every Episode of the Feed, newest `publishedAt` first. Not paged; the
-        app uses Sync for bulk data.
+        Every Episode of the Feed, newest `publishedAt` first. Episodes with
+        equal `publishedAt` are ordered by `id` descending. Not paged; the app
+        uses Sync for bulk data.
       responses:
         "200":
           description: The Feed's Episodes, newest first.
@@ -317,6 +335,13 @@ paths:
         Fetches the Feed now and inserts unseen Episodes (by guid) as New,
         keeping the state of known ones. Runs before responding (capped at 60
         seconds). A failure is reported as `ok: false` inside a 200.
+
+        The 60-second cap: when it passes before the Feed finishes, the result
+        is `ok: false` with `error` "The refresh did not finish within 60
+        seconds.", and a result that arrives after the cap is discarded and not
+        applied. The response is still 200 with exactly one result. If the Feed
+        is unsubscribed while its refresh runs, `error` is "The feed was
+        unsubscribed during the refresh."
       responses:
         "200":
           description: Exactly one result, for this Feed.
@@ -346,11 +371,24 @@ paths:
       summary: Push Episode state changes
       description: |
         Last-write-wins: for each item, the state is applied only if its
-        `stateUpdatedAt` is newer than the stored one. A stale item is not an
-        error; it is reported with `outcome` `STALE` and the server's current
-        state. An unknown `episodeId` is reported per item with `outcome`
-        `UNKNOWN_EPISODE`. The response has one result per request item, in
-        request order.
+        `stateUpdatedAt` is strictly greater than the stored one, so an equal
+        timestamp is `STALE`. A stale item is not an error; it is reported with
+        `outcome` `STALE` and the server's current state. An unknown
+        `episodeId` is reported per item with `outcome` `UNKNOWN_EPISODE`. The
+        response has one result per request item, in request order.
+
+        Duplicate `episodeId`s in one batch are processed in request order and
+        each gets its own result; a later item is compared with the state left
+        by the earlier one, so a later duplicate can be `STALE`.
+
+        Batch size: a batch that is empty or has more than 1000 items is
+        rejected with 422 and nothing is applied.
+
+        Item rules: any invalid item rejects the whole batch with 422 and
+        nothing is applied. `episodeId`, `positionSec`, and `stateUpdatedAt`
+        must be JSON integers (not strings or decimals). `positionSec` must be
+        between 0 and 2147483647. `status` is `NEW` or `PLAYED`. `PLAYED`
+        requires a non-null `playedAt`; `NEW` requires `playedAt` null.
       requestBody:
         required: true
         content:
@@ -358,6 +396,7 @@ paths:
             schema:
               type: array
               minItems: 1
+              maxItems: 1000
               items:
                 $ref: "#/components/schemas/EpisodeStateItem"
             examples:
@@ -417,6 +456,12 @@ paths:
         Returns Feeds and Episodes with `rev > since` and Tombstones with
         `rev > since`. `since=0` returns everything. Keep calling with
         `since` set to the returned `nextRev` while `hasMore` is true.
+
+        The page is the `limit` lowest-`rev` changes taken across Feeds,
+        Episodes, and Tombstones together, so one page can mix kinds. Each of
+        the three arrays is ascending by `rev`. `hasMore` is true exactly when
+        more changes remain beyond this page. An empty page returns `nextRev`
+        equal to `since`.
       parameters:
         - name: since
           in: query
@@ -460,6 +505,14 @@ paths:
         guid) as New and keeping the state of known ones. A failing Feed does
         not stop the others and is reported as `ok: false` inside a 200. Runs
         before responding (capped at 60 seconds).
+
+        The 60-second cap: when it passes, every Feed not finished (including
+        Feeds never started) is reported with `ok: false` and `error` "The
+        refresh did not finish within 60 seconds.", and a result that arrives
+        after the cap is discarded and not applied. The response is still 200
+        with one result per Feed, in the same order. If a Feed is unsubscribed
+        while its refresh runs, its `error` is "The feed was unsubscribed
+        during the refresh."
       responses:
         "200":
           description: One result per subscribed Feed, in Feed Priority order. Empty when there are no Feeds.
@@ -497,7 +550,12 @@ components:
       example: 12
   responses:
     Unauthorized:
-      description: The bearer token is missing or wrong.
+      description: |
+        The bearer token is missing or wrong. The `Authorization` header must
+        be `Bearer <token>` (the scheme is case-insensitive). The token is
+        checked before the request body and parameters are validated, so a
+        request with a missing or wrong token gets 401 even when its body is
+        malformed JSON or a parameter is invalid.
       headers:
         WWW-Authenticate:
           description: Authentication scheme required.
@@ -527,7 +585,14 @@ components:
         The request is invalid: a path `id` that is not an integer, a missing
         or out-of-range query parameter or body field, a body value outside its
         enum, a reorder list that is not every subscribed id exactly once, or
-        (on subscribe) a feed that cannot be fetched or parsed.
+        (on subscribe) a feed that cannot be fetched or parsed. Cases include:
+        malformed JSON or a wrong-typed body; an Episode state item whose
+        `positionSec`, `playedAt`, and `status` break the item rules (see
+        `POST /v1/episodes/state`); an empty state batch or one with more than
+        1000 items; a blank `q` or one over 200 characters after trimming;
+        and a `since` or `limit` that is not an integer or is out of range
+        (`since` < 0, `limit` < 1 or > 500). 422 is only returned to an
+        authenticated caller; an unauthenticated request gets 401.
       content:
         application/json:
           schema:
@@ -697,6 +762,7 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
           description: Playback position in seconds.
         stateUpdatedAt:
           type: integer
@@ -876,6 +942,7 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
         stateUpdatedAt:
           type: integer
           format: int64
@@ -909,6 +976,7 @@ components:
           type: integer
           format: int32
           minimum: 0
+          maximum: 2147483647
         stateUpdatedAt:
           type: integer
           format: int64
