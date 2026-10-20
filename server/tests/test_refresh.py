@@ -6,14 +6,14 @@ import pytest
 from fastapi.testclient import TestClient
 from us25_helpers import AUTH, SECRET_PARTS, SECRET_URL, TOKEN, StubFetcher, ep, feed_of
 
-from podclatch_server import refresh
+from podclatch_server import refresh, sql_store
 from podclatch_server.app import create_app
-from podclatch_server.config import Settings
+from podclatch_server.config import DEFAULT_DATABASE_URL, Settings
 from podclatch_server.feeds import FeedTimeoutError, FeedUnreachableError, NotAFeedError
 from podclatch_server.refresh import GENERIC_ERROR, TIMEOUT_ERROR, UNSUBSCRIBED_ERROR
 from podclatch_server.routes.feeds import get_fetcher
 from podclatch_server.scheduler import RefreshScheduler
-from podclatch_server.store import InMemoryStore, store_for_app
+from podclatch_server.store import store_for_app
 
 URL_A = "https://example.com/a.xml"
 URL_B = "https://example.com/b.xml"
@@ -396,7 +396,7 @@ class FakeWait:
 
 
 def seeded_store(fetcher, *urls):
-    store = InMemoryStore()
+    store = sql_store.open_store(DEFAULT_DATABASE_URL)  # conftest gives it a fresh temp database
     for url in urls:
         store.add_feed(url, feed_of(ep(1)), 1)
     return store

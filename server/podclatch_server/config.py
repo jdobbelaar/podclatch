@@ -5,6 +5,8 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from podclatch_server.db import SUPPORTED_SCHEMES, is_supported_url
+
 DEFAULT_DATABASE_URL = "sqlite:///./podclatch.db"
 DEFAULT_REFRESH_INTERVAL_HOURS = 3.0
 DEFAULT_LOG_LEVEL = "INFO"
@@ -19,7 +21,7 @@ class ConfigError(ValueError):
 
 @dataclass(frozen=True)
 class Settings:
-    database_url: str = DEFAULT_DATABASE_URL
+    database_url: str = field(default=DEFAULT_DATABASE_URL, repr=False)
     token: str | None = field(default=None, repr=False)
     refresh_interval_hours: float = DEFAULT_REFRESH_INTERVAL_HOURS
     log_level: str = DEFAULT_LOG_LEVEL
@@ -28,6 +30,9 @@ class Settings:
     def __post_init__(self) -> None:
         if not self.database_url:
             raise ConfigError("DATABASE_URL must not be empty")
+        if not is_supported_url(self.database_url):
+            schemes = ", ".join(f"{scheme}://" for scheme in SUPPORTED_SCHEMES)
+            raise ConfigError(f"DATABASE_URL must start with one of: {schemes}")
         if not math.isfinite(self.refresh_interval_hours) or self.refresh_interval_hours <= 0:
             raise ConfigError("REFRESH_INTERVAL_HOURS must be a positive number")
         if self.log_level not in LOG_LEVELS:

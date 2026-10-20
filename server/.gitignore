@@ -3,3 +3,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .env
+podclatch.db
+podclatch.db-wal
+podclatch.db-shm
