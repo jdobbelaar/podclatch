@@ -1,5 +1,4 @@
 import logging
-import re
 import secrets
 
 import pytest
@@ -168,30 +167,49 @@ def test_docs_routes_are_not_served(client, path):
     assert client.get(path, headers={"Authorization": f"Bearer {TOKEN}"}).status_code == 404
 
 
-HTTP_METHODS = ("get", "put", "post", "delete", "patch", "options", "head")
+def _dependant_calls(dependant) -> set:
+    calls = {dependant.call}
+    for sub in dependant.dependencies:
+        calls |= _dependant_calls(sub)
+    return calls
 
 
-def _unprotected_routes(app) -> list[str]:
-    """Probe every documented route (except /healthz) without credentials.
+def _unprotected_routes(routes, inherited=frozenset(), prefix="") -> list[str]:
+    """Walk the whole route tree, including routes outside the OpenAPI schema.
 
-    Uses the generated schema (`app.openapi()` still works with the /openapi.json route
-    disabled), so it does not depend on FastAPI routing internals.
+    FastAPI wraps included routers in a container exposing `original_router` and
+    `include_context`; it is read with getattr, so nothing private is imported. Dependencies
+    from every enclosing include, router, and route (plus the route's dependant tree) count.
     """
-    client = TestClient(app)
     unprotected = []
-    for path, operations in app.openapi()["paths"].items():
+    for route in routes:
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            context = getattr(route, "include_context", None)
+            deps = {d.dependency for d in getattr(context, "dependencies", [])}
+            deps |= {d.dependency for d in getattr(original, "dependencies", [])}
+            unprotected += _unprotected_routes(
+                original.routes,
+                inherited | deps,
+                prefix + getattr(context, "prefix", ""),
+            )
+            continue
+        path = prefix + getattr(route, "path", repr(route))
         if path == "/healthz":
             continue
-        url = re.sub(r"\{[^}]+\}", "1", path)
-        for method in operations:
-            if method in HTTP_METHODS and client.request(method, url).status_code != 401:
-                unprotected.append(f"{method.upper()} {path}")
+        calls = set(inherited)
+        calls |= {d.dependency for d in getattr(route, "dependencies", [])}
+        dependant = getattr(route, "dependant", None)
+        if dependant is not None:
+            calls |= _dependant_calls(dependant)
+        if require_token not in calls:
+            unprotected.append(path)
     return unprotected
 
 
 def test_every_route_except_healthz_requires_token(app):
-    assert _unprotected_routes(app) == []
-    assert _unprotected_routes(create_app(Settings(test_mode=True))) == []
+    assert _unprotected_routes(app.routes) == []
+    assert _unprotected_routes(create_app(Settings(test_mode=True)).routes) == []
 
 
 def test_guard_catches_a_route_without_the_dependency():
@@ -203,4 +221,42 @@ def test_guard_catches_a_route_without_the_dependency():
         return {}
 
     app.include_router(router)
-    assert _unprotected_routes(app) == ["GET /forgot"]
+    assert _unprotected_routes(app.routes) == ["/forgot"]
+
+
+def test_guard_catches_unprotected_routes_outside_the_schema():
+    app = build_app()
+
+    @app.get("/leak", include_in_schema=False)
+    def leak() -> dict[str, str]:
+        return {}
+
+    inner = APIRouter(prefix="/inner")
+
+    @inner.get("/deep", include_in_schema=False)
+    def deep() -> dict[str, str]:
+        return {}
+
+    outer = APIRouter(prefix="/outer")
+    outer.include_router(inner)
+    app.include_router(outer, prefix="/v1")
+    assert sorted(_unprotected_routes(app.routes)) == ["/leak", "/v1/outer/inner/deep"]
+
+
+def test_guard_accepts_protected_nested_routes_and_exact_healthz_exemption():
+    app = build_app()
+    inner = APIRouter(prefix="/inner")
+
+    @inner.get("/deep", include_in_schema=False)
+    def deep() -> dict[str, str]:
+        return {}
+
+    outer = APIRouter(prefix="/outer", dependencies=[Depends(require_token)])
+    outer.include_router(inner)
+    app.include_router(outer)
+
+    @app.get("/healthz/extra", include_in_schema=False)
+    def extra() -> dict[str, str]:
+        return {}
+
+    assert _unprotected_routes(app.routes) == ["/healthz/extra"]
