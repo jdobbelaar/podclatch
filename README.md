@@ -39,6 +39,8 @@ Run these from `server/`:
 4. Load the variables and start the server: `set -a; . ./.env; set +a; uv run uvicorn --factory podclatch_server.app:create_app`
 5. Check it: `curl http://localhost:8000/healthz` returns `{"status":"ok"}`.
 
+   In Windows PowerShell, `curl` is an alias for `Invoke-WebRequest` and rejects options such as `-i` and `-H`. Type `curl.exe` instead of `curl` (it ships with Windows 10 and later), or use `Invoke-RestMethod http://localhost:8000/healthz`.
+
    The server keeps its data in a database and creates or upgrades the schema by itself at startup (no migration command). By default that is the SQLite file `server/podclatch.db` (git-ignored; run from `server/`, or the file is created in whatever directory you start from). To use Postgres, set `DATABASE_URL=postgresql://user:password@host:5432/dbname`. To also run the tests against Postgres, set `PODCLATCH_TEST_DATABASE_URL` to a running database before `uv run pytest`; each test uses its own temporary schema, and without the variable the Postgres tests are skipped.
 6. Run the tests: `uv run pytest`
 7. Run the linter: `uv run ruff check .`
@@ -58,6 +60,8 @@ This starts the server and its Postgres together. Run these from the repository 
    - `curl -i http://localhost:8180/healthz` returns 200 and `{"status":"ok"}`.
    - `curl -i -H "Authorization: Bearer <your token>" http://localhost:8180/v1/feeds` returns 200 and `[]` on a fresh volume.
    - `curl -i http://localhost:8180/v1/feeds` (no token) returns 401 with `{"detail":"Not authenticated."}`.
+
+   **PowerShell:** `curl` is an alias for `Invoke-WebRequest` there and rejects `-i` and `-H`. Use `curl.exe` in place of `curl` in the three commands above (it ships with Windows 10 and later). If you prefer PowerShell's own commands: `Invoke-RestMethod http://localhost:8180/healthz`, and `Invoke-RestMethod http://localhost:8180/v1/feeds -Headers @{ Authorization = "Bearer <your token>" }`.
 
 | Target | Raw command | What it does |
 | --- | --- | --- |
