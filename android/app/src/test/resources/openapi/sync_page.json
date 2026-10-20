@@ -1,0 +1,40 @@
+{
+  "feeds": [
+    {
+      "id": 12,
+      "feedUrl": "https://example.com/feeds/history.xml",
+      "title": "Example History Podcast",
+      "author": "Example Media",
+      "description": "Stories from the past.",
+      "artworkUrl": "https://example.com/art/history-600.jpg",
+      "priority": 0,
+      "listenOrder": "NEWEST_FIRST",
+      "lastRefreshedAt": 1760000000000,
+      "subscribedAt": 1750000000000,
+      "rev": 1040
+    }
+  ],
+  "episodes": [
+    {
+      "id": 501,
+      "feedId": 12,
+      "guid": "example-history-ep-101",
+      "title": "Episode 101",
+      "description": "The one about Rome.",
+      "audioUrl": "https://example.com/audio/ep101.mp3",
+      "publishedAt": 1759900000000,
+      "durationSec": 2700,
+      "artworkUrl": null,
+      "status": "NEW",
+      "playedAt": null,
+      "positionSec": 0,
+      "stateUpdatedAt": 1759900000000,
+      "rev": 1041
+    }
+  ],
+  "tombstones": [
+    {"entityType": "EPISODE", "entityId": 480, "rev": 1043}
+  ],
+  "nextRev": 1043,
+  "hasMore": true
+}

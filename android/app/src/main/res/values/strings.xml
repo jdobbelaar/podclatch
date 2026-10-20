@@ -1,4 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PodClatch</string>
+
+    <!-- Connection screen -->
+    <string name="connection_title">Connect to a PodClatch Server</string>
+    <string name="server_url_label">Server URL</string>
+    <string name="token_label">Token</string>
+    <string name="token_show">Show token</string>
+    <string name="token_hide">Hide token</string>
+    <string name="token_show_action">Show</string>
+    <string name="token_hide_action">Hide</string>
+    <string name="test_connection">Test connection</string>
+    <string name="testing_connection">Testing connection</string>
+    <string name="save_continue">Save and continue</string>
+    <string name="cancel">Cancel</string>
+    <string name="notice_token_rejected">The server rejected the token. Enter the token again.</string>
+
+    <!-- Connection test results -->
+    <string name="result_connected">Connected to %1$s.</string>
+    <string name="result_unreachable">Cannot reach the server. Check the address and your network.</string>
+    <string name="result_timeout">The server did not answer in time.</string>
+    <string name="result_token_rejected">The server rejected the token.</string>
+    <string name="result_not_podclatch">That address did not answer like a PodClatch server.</string>
+    <string name="result_http_error">The server answered with an error (HTTP %1$d).</string>
+    <string name="result_http_error_detail">The server answered with an error (HTTP %1$d): %2$s</string>
+
+    <!-- Validation messages (never echo the input) -->
+    <string name="url_blank">Enter the server address.</string>
+    <string name="url_bad_scheme">The address must start with http:// or https://.</string>
+    <string name="url_invalid">That is not a valid server address.</string>
+    <string name="url_userinfo">Remove the user name and password from the address.</string>
+    <string name="url_query">Remove the query string from the address.</string>
+    <string name="url_fragment">Remove the # part from the address.</string>
+    <string name="url_https_required">HTTPS is required for this address.</string>
+    <string name="token_blank">Enter the token.</string>
+    <string name="token_invalid_characters">The token may contain only printable characters, without spaces.</string>
+
+    <!-- Switching server -->
+    <string name="switch_server_title">Switch server?</string>
+    <string name="switch_server_message">This is a different server. The local cache and downloads will be cleared.</string>
+    <string name="switch_server_confirm">Switch server</string>
+
+    <!-- Placeholder home (replaced by the Feeds and Queue tabs) -->
+    <string name="home_connected">Connected to %1$s</string>
+    <string name="sync_running">Syncing...</string>
+    <string name="sync_last">Last synced %1$s</string>
+    <string name="sync_never">Not synced yet</string>
+    <string name="sync_failed">Sync failed: %1$s</string>
+    <string name="feed_count">Feeds: %1$d</string>
+    <string name="episode_count">Episodes: %1$d</string>
+    <string name="sync_rev">Revision: %1$d</string>
+    <string name="sync_now">Sync now</string>
+    <string name="edit_connection">Connection settings</string>
 </resources>

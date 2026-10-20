@@ -1,0 +1,16 @@
+{
+  "id": 501,
+  "feedId": 12,
+  "guid": "example-history-ep-101",
+  "title": "Episode 101",
+  "description": "The one about Rome.",
+  "audioUrl": "https://example.com/audio/ep101.mp3",
+  "publishedAt": 1759900000000,
+  "durationSec": 2700,
+  "artworkUrl": null,
+  "status": "NEW",
+  "playedAt": null,
+  "positionSec": 0,
+  "stateUpdatedAt": 1759900000000,
+  "rev": 1041
+}
