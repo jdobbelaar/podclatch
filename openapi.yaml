@@ -1,0 +1,990 @@
+openapi: 3.1.0
+info:
+  title: PodClatch Server API
+  version: 1.0.0
+  description: |
+    HTTP contract between the PodClatch Android app and PodClatch Server.
+
+    Every endpoint except `GET /healthz` requires a bearer token. All ids are
+    64-bit integers. All timestamps are UTC epoch milliseconds. The server
+    never fetches, stores, or serves podcast audio; `Episode.audioUrl` points
+    at the publisher.
+tags:
+  - name: health
+    description: Liveness check.
+  - name: search
+    description: Podcast directory search (proxied to iTunes).
+  - name: feeds
+    description: Subscribe, unsubscribe, reorder, and set Listen Order for Feeds.
+  - name: episodes
+    description: Episodes of a Feed and Episode state (New / Played, position).
+  - name: sync
+    description: Pull changes since a revision.
+  - name: refresh
+    description: Fetch Feeds from publishers now.
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Liveness check
+      description: Unauthenticated. Returns 200 when the server is up.
+      security: []
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              examples:
+                ok:
+                  value:
+                    status: ok
+  /v1/search:
+    get:
+      operationId: searchPodcasts
+      tags: [search]
+      summary: Search for podcasts
+      description: |
+        Proxies an iTunes podcast search (at most 25 results). Results are
+        cached in memory for 10 minutes per query. An iTunes failure returns
+        502 with a clear message.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search term.
+          schema:
+            type: string
+            minLength: 1
+          example: history
+      responses:
+        "200":
+          description: Matching podcasts, at most 25.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 25
+                items:
+                  $ref: "#/components/schemas/SearchResult"
+              examples:
+                results:
+                  value:
+                    - feedUrl: https://example.com/feeds/history.xml
+                      title: Example History Podcast
+                      author: Example Media
+                      artworkUrl: https://example.com/art/history-600.jpg
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "502":
+          description: The upstream directory (iTunes) failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                upstreamFailure:
+                  value:
+                    detail: The podcast directory is unavailable. Try again later.
+  /v1/feeds:
+    get:
+      operationId: listFeeds
+      tags: [feeds]
+      summary: List subscribed Feeds
+      description: All subscribed Feeds in Feed Priority order (ascending `priority`, 0 first).
+      responses:
+        "200":
+          description: Subscribed Feeds in priority order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Feed"
+              examples:
+                feeds:
+                  value:
+                    - id: 12
+                      feedUrl: https://example.com/feeds/history.xml
+                      title: Example History Podcast
+                      author: Example Media
+                      description: Stories from the past.
+                      artworkUrl: https://example.com/art/history-600.jpg
+                      priority: 0
+                      listenOrder: NEWEST_FIRST
+                      lastRefreshedAt: 1760000000000
+                      subscribedAt: 1750000000000
+                      rev: 1040
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: subscribeFeed
+      tags: [feeds]
+      summary: Subscribe to a Feed
+      description: |
+        Fetches and parses the feed, inserts the Feed with `priority` 0 (every
+        other Feed's priority increases by 1, so the new Feed goes to the top),
+        and inserts its Episodes as New. If the feed cannot be fetched or
+        parsed the response is 422 and nothing changes. Subscribing to an
+        already-subscribed `feedUrl` returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscribeRequest"
+            examples:
+              subscribe:
+                value:
+                  feedUrl: https://example.com/feeds/history.xml
+      responses:
+        "201":
+          description: The new Feed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feed"
+              examples:
+                created:
+                  $ref: "#/components/examples/FeedExample"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: The `feedUrl` is already subscribed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                alreadySubscribed:
+                  value:
+                    detail: Already subscribed to this feed.
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/feeds/order:
+    put:
+      operationId: reorderFeeds
+      tags: [feeds]
+      summary: Reorder Feeds
+      description: |
+        `feedIds` must contain every subscribed Feed id exactly once, otherwise
+        the response is 422. Priorities are rewritten to 0..n-1 in the given
+        order, atomically. The empty list is valid exactly when there are no
+        subscribed Feeds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderRequest"
+            examples:
+              reorder:
+                value:
+                  feedIds: [12, 7, 31]
+      responses:
+        "200":
+          description: The Feeds in their new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Feed"
+              examples:
+                reordered:
+                  value:
+                    - id: 12
+                      feedUrl: https://example.com/feeds/history.xml
+                      title: Example History Podcast
+                      author: Example Media
+                      description: Stories from the past.
+                      artworkUrl: https://example.com/art/history-600.jpg
+                      priority: 0
+                      listenOrder: NEWEST_FIRST
+                      lastRefreshedAt: 1760000000000
+                      subscribedAt: 1750000000000
+                      rev: 1040
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/feeds/{id}:
+    parameters:
+      - $ref: "#/components/parameters/FeedId"
+    patch:
+      operationId: updateFeed
+      tags: [feeds]
+      summary: Set a Feed's Listen Order
+      description: Updates the Feed's `listenOrder`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFeedRequest"
+            examples:
+              oldestFirst:
+                value:
+                  listenOrder: OLDEST_FIRST
+      responses:
+        "200":
+          description: The updated Feed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feed"
+              examples:
+                updated:
+                  $ref: "#/components/examples/FeedExample"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+    delete:
+      operationId: unsubscribeFeed
+      tags: [feeds]
+      summary: Unsubscribe from a Feed
+      description: |
+        Deletes the Feed and its Episodes, writes Tombstones for the Feed and
+        for its Episodes, and closes the priority gap.
+      responses:
+        "204":
+          description: Unsubscribed. No body.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/feeds/{id}/episodes:
+    parameters:
+      - $ref: "#/components/parameters/FeedId"
+    get:
+      operationId: listFeedEpisodes
+      tags: [episodes]
+      summary: List a Feed's Episodes
+      description: |
+        Every Episode of the Feed, newest `publishedAt` first. Not paged; the
+        app uses Sync for bulk data.
+      responses:
+        "200":
+          description: The Feed's Episodes, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Episode"
+              examples:
+                episodes:
+                  value:
+                    - id: 501
+                      feedId: 12
+                      guid: example-history-ep-101
+                      title: Episode 101
+                      description: The one about Rome.
+                      audioUrl: https://example.com/audio/ep101.mp3
+                      publishedAt: 1759900000000
+                      durationSec: 2700
+                      artworkUrl: null
+                      status: NEW
+                      playedAt: null
+                      positionSec: 0
+                      stateUpdatedAt: 1759900000000
+                      rev: 1041
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/feeds/{id}/refresh:
+    parameters:
+      - $ref: "#/components/parameters/FeedId"
+    post:
+      operationId: refreshFeed
+      tags: [refresh]
+      summary: Refresh one Feed
+      description: |
+        Fetches the Feed now and inserts unseen Episodes (by guid) as New,
+        keeping the state of known ones. Runs before responding (capped at 60
+        seconds). A failure is reported as `ok: false` inside a 200.
+      responses:
+        "200":
+          description: Exactly one result, for this Feed.
+          content:
+            application/json:
+              schema:
+                type: array
+                minItems: 1
+                maxItems: 1
+                items:
+                  $ref: "#/components/schemas/RefreshResult"
+              examples:
+                refreshed:
+                  value:
+                    - feedId: 12
+                      ok: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/episodes/state:
+    post:
+      operationId: pushEpisodeState
+      tags: [episodes]
+      summary: Push Episode state changes
+      description: |
+        Last-write-wins: for each item, the state is applied only if its
+        `stateUpdatedAt` is newer than the stored one. A stale item is not an
+        error; it is reported with `outcome` `STALE` and the server's current
+        state. An unknown `episodeId` is reported per item with `outcome`
+        `UNKNOWN_EPISODE`. The response has one result per request item, in
+        request order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/EpisodeStateItem"
+            examples:
+              batch:
+                value:
+                  - episodeId: 501
+                    status: PLAYED
+                    playedAt: 1760000000000
+                    positionSec: 1800
+                    stateUpdatedAt: 1760000000000
+                  - episodeId: 502
+                    status: NEW
+                    playedAt: null
+                    positionSec: 120
+                    stateUpdatedAt: 1750000000000
+                  - episodeId: 999999
+                    status: NEW
+                    playedAt: null
+                    positionSec: 0
+                    stateUpdatedAt: 1760000000000
+      responses:
+        "200":
+          description: One result per request item, in request order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EpisodeStateResult"
+              examples:
+                results:
+                  value:
+                    - episodeId: 501
+                      outcome: APPLIED
+                      status: PLAYED
+                      playedAt: 1760000000000
+                      positionSec: 1800
+                      stateUpdatedAt: 1760000000000
+                    - episodeId: 502
+                      outcome: STALE
+                      status: PLAYED
+                      playedAt: 1755000000000
+                      positionSec: 2400
+                      stateUpdatedAt: 1755000000000
+                    - episodeId: 999999
+                      outcome: UNKNOWN_EPISODE
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/sync:
+    get:
+      operationId: pullSync
+      tags: [sync]
+      summary: Pull changes since a revision
+      description: |
+        Returns Feeds and Episodes with `rev > since` and Tombstones with
+        `rev > since`. `since=0` returns everything. Keep calling with
+        `since` set to the returned `nextRev` while `hasMore` is true.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: Return changes with `rev` greater than this global change counter value.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          description: Maximum combined count of feeds, episodes, and tombstones returned.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 500
+      responses:
+        "200":
+          description: A page of changes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/SyncPageExample"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+  /v1/refresh:
+    post:
+      operationId: refreshAllFeeds
+      tags: [refresh]
+      summary: Refresh all Feeds
+      description: |
+        Fetches each Feed in Feed Priority order, inserting unseen Episodes (by
+        guid) as New and keeping the state of known ones. A failing Feed does
+        not stop the others and is reported as `ok: false` inside a 200. Runs
+        before responding (capped at 60 seconds).
+      responses:
+        "200":
+          description: One result per subscribed Feed, in Feed Priority order. Empty when there are no Feeds.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RefreshResult"
+              examples:
+                mixed:
+                  value:
+                    - feedId: 12
+                      ok: true
+                    - feedId: 7
+                      ok: false
+                      error: Could not fetch the feed (HTTP 503).
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: The shared access token. A missing or wrong token returns 401.
+  parameters:
+    FeedId:
+      name: id
+      in: path
+      required: true
+      description: Feed id.
+      schema:
+        type: integer
+        format: int64
+      example: 12
+  responses:
+    Unauthorized:
+      description: The bearer token is missing or wrong.
+      headers:
+        WWW-Authenticate:
+          description: Authentication scheme required.
+          schema:
+            type: string
+          example: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            unauthorized:
+              value:
+                detail: Not authenticated.
+    NotFound:
+      description: No Feed has this id.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            notFound:
+              value:
+                detail: Feed not found.
+    UnprocessableEntity:
+      description: |
+        The request is invalid: a path `id` that is not an integer, a missing
+        or out-of-range query parameter or body field, a body value outside its
+        enum, a reorder list that is not every subscribed id exactly once, or
+        (on subscribe) a feed that cannot be fetched or parsed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            invalidBody:
+              value:
+                detail: feedUrl is required.
+            unfetchableFeed:
+              value:
+                detail: The feed could not be fetched or parsed.
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    Error:
+      type: object
+      description: |
+        Error body for every 4xx and 502 response. `detail` never contains a
+        full feed URL.
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          description: Human-readable message.
+      examples:
+        - detail: Feed not found.
+    ListenOrder:
+      type: string
+      description: Which end of a Feed's Episodes is listened to first.
+      enum: [NEWEST_FIRST, OLDEST_FIRST]
+    EpisodeStatus:
+      type: string
+      description: New or Played.
+      enum: [NEW, PLAYED]
+    TombstoneEntityType:
+      type: string
+      enum: [FEED, EPISODE]
+    StateOutcome:
+      type: string
+      description: |
+        APPLIED: the item was newer and is now stored. STALE: the stored state
+        is newer, so the item was ignored. UNKNOWN_EPISODE: no Episode has this id.
+      enum: [APPLIED, STALE, UNKNOWN_EPISODE]
+    Feed:
+      type: object
+      description: |
+        A subscribed podcast. Missing publisher text (`title`, `author`,
+        `description`, `artworkUrl`) is an empty string, never null.
+      required:
+        - id
+        - feedUrl
+        - title
+        - author
+        - description
+        - artworkUrl
+        - priority
+        - listenOrder
+        - lastRefreshedAt
+        - subscribedAt
+        - rev
+      properties:
+        id:
+          type: integer
+          format: int64
+        feedUrl:
+          type: string
+          description: The publisher's RSS feed URL; unique.
+        title:
+          type: string
+        author:
+          type: string
+        description:
+          type: string
+        artworkUrl:
+          type: string
+        priority:
+          type: integer
+          minimum: 0
+          description: Feed Priority; 0 is highest. Unique and contiguous across Feeds.
+        listenOrder:
+          $ref: "#/components/schemas/ListenOrder"
+        lastRefreshedAt:
+          type: [integer, "null"]
+          format: int64
+          description: UTC epoch milliseconds of the last successful Refresh; null if never refreshed.
+        subscribedAt:
+          type: integer
+          format: int64
+          description: UTC epoch milliseconds.
+        rev:
+          type: integer
+          format: int64
+          description: Global change counter value at the last change.
+      examples:
+        - id: 12
+          feedUrl: https://example.com/feeds/history.xml
+          title: Example History Podcast
+          author: Example Media
+          description: Stories from the past.
+          artworkUrl: https://example.com/art/history-600.jpg
+          priority: 0
+          listenOrder: NEWEST_FIRST
+          lastRefreshedAt: 1760000000000
+          subscribedAt: 1750000000000
+          rev: 1040
+    Episode:
+      type: object
+      description: |
+        One Episode of a Feed. Missing publisher text (`title`, `description`)
+        is an empty string. `artworkUrl` null means use the Feed's artwork.
+      required:
+        - id
+        - feedId
+        - guid
+        - title
+        - description
+        - audioUrl
+        - publishedAt
+        - durationSec
+        - artworkUrl
+        - status
+        - playedAt
+        - positionSec
+        - stateUpdatedAt
+        - rev
+      properties:
+        id:
+          type: integer
+          format: int64
+        feedId:
+          type: integer
+          format: int64
+        guid:
+          type: string
+          description: Publisher identity of the Episode; unique per Feed.
+        title:
+          type: string
+        description:
+          type: string
+        audioUrl:
+          type: string
+          description: Publisher's audio URL. The server never serves audio.
+        publishedAt:
+          type: integer
+          format: int64
+          description: UTC epoch milliseconds.
+        durationSec:
+          type: [integer, "null"]
+          format: int32
+          minimum: 0
+          description: Duration in seconds; null if the publisher gave none.
+        artworkUrl:
+          type: [string, "null"]
+          description: Episode artwork; null means fall back to the Feed's artwork.
+        status:
+          $ref: "#/components/schemas/EpisodeStatus"
+        playedAt:
+          type: [integer, "null"]
+          format: int64
+          description: UTC epoch milliseconds when status became PLAYED; null while NEW.
+        positionSec:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Playback position in seconds.
+        stateUpdatedAt:
+          type: integer
+          format: int64
+          description: UTC epoch milliseconds (client time) when status or position last changed.
+        rev:
+          type: integer
+          format: int64
+          description: Global change counter value at the last change.
+      examples:
+        - id: 501
+          feedId: 12
+          guid: example-history-ep-101
+          title: Episode 101
+          description: The one about Rome.
+          audioUrl: https://example.com/audio/ep101.mp3
+          publishedAt: 1759900000000
+          durationSec: 2700
+          artworkUrl: null
+          status: NEW
+          playedAt: null
+          positionSec: 0
+          stateUpdatedAt: 1759900000000
+          rev: 1041
+    Tombstone:
+      type: object
+      description: Records a deleted Feed or Episode so Sync can tell the app.
+      required: [entityType, entityId, rev]
+      properties:
+        entityType:
+          $ref: "#/components/schemas/TombstoneEntityType"
+        entityId:
+          type: integer
+          format: int64
+        rev:
+          type: integer
+          format: int64
+          description: Global change counter value when the entity was deleted.
+      examples:
+        - entityType: EPISODE
+          entityId: 480
+          rev: 1043
+    SyncPage:
+      type: object
+      description: |
+        One page of changes. `limit` caps the combined count of feeds,
+        episodes, and tombstones returned. `nextRev` is the highest `rev`
+        included in the page (equal to `since` when the page is empty). The
+        client passes `nextRev` as `since` while `hasMore` is true.
+      required: [feeds, episodes, tombstones, nextRev, hasMore]
+      properties:
+        feeds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Feed"
+        episodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Episode"
+        tombstones:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tombstone"
+        nextRev:
+          type: integer
+          format: int64
+          description: Global change counter value to pass as `since` on the next call.
+        hasMore:
+          type: boolean
+      examples:
+        - feeds:
+            - id: 12
+              feedUrl: https://example.com/feeds/history.xml
+              title: Example History Podcast
+              author: Example Media
+              description: Stories from the past.
+              artworkUrl: https://example.com/art/history-600.jpg
+              priority: 0
+              listenOrder: NEWEST_FIRST
+              lastRefreshedAt: 1760000000000
+              subscribedAt: 1750000000000
+              rev: 1040
+          episodes:
+            - id: 501
+              feedId: 12
+              guid: example-history-ep-101
+              title: Episode 101
+              description: The one about Rome.
+              audioUrl: https://example.com/audio/ep101.mp3
+              publishedAt: 1759900000000
+              durationSec: 2700
+              artworkUrl: null
+              status: NEW
+              playedAt: null
+              positionSec: 0
+              stateUpdatedAt: 1759900000000
+              rev: 1041
+          tombstones:
+            - entityType: EPISODE
+              entityId: 480
+              rev: 1043
+          nextRev: 1043
+          hasMore: true
+    SearchResult:
+      type: object
+      description: A podcast found in the directory. Missing text is an empty string.
+      required: [feedUrl, title, author, artworkUrl]
+      properties:
+        feedUrl:
+          type: string
+        title:
+          type: string
+        author:
+          type: string
+        artworkUrl:
+          type: string
+      examples:
+        - feedUrl: https://example.com/feeds/history.xml
+          title: Example History Podcast
+          author: Example Media
+          artworkUrl: https://example.com/art/history-600.jpg
+    SubscribeRequest:
+      type: object
+      required: [feedUrl]
+      properties:
+        feedUrl:
+          type: string
+    ReorderRequest:
+      type: object
+      required: [feedIds]
+      properties:
+        feedIds:
+          type: array
+          description: Every subscribed Feed id exactly once, highest priority first.
+          items:
+            type: integer
+            format: int64
+    UpdateFeedRequest:
+      type: object
+      required: [listenOrder]
+      properties:
+        listenOrder:
+          $ref: "#/components/schemas/ListenOrder"
+    RefreshResult:
+      type: object
+      description: |
+        Result of refreshing one Feed. `error` is present only when `ok` is
+        false and never contains a full feed URL.
+      required: [feedId, ok]
+      properties:
+        feedId:
+          type: integer
+          format: int64
+        ok:
+          type: boolean
+        error:
+          type: string
+      examples:
+        - feedId: 7
+          ok: false
+          error: Could not fetch the feed (HTTP 503).
+    EpisodeStateItem:
+      type: object
+      description: One Episode state change from the device.
+      required: [episodeId, status, playedAt, positionSec, stateUpdatedAt]
+      properties:
+        episodeId:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/EpisodeStatus"
+        playedAt:
+          type: [integer, "null"]
+          format: int64
+          description: UTC epoch milliseconds when played; null while NEW.
+        positionSec:
+          type: integer
+          format: int32
+          minimum: 0
+        stateUpdatedAt:
+          type: integer
+          format: int64
+          description: UTC epoch milliseconds (client time) of this change.
+      examples:
+        - episodeId: 501
+          status: PLAYED
+          playedAt: 1760000000000
+          positionSec: 1800
+          stateUpdatedAt: 1760000000000
+    EpisodeStateResult:
+      type: object
+      description: |
+        Result for one request item, in request order. `status`, `playedAt`,
+        `positionSec`, and `stateUpdatedAt` hold the server's resulting state;
+        they are present for APPLIED and STALE and omitted for UNKNOWN_EPISODE.
+      required: [episodeId, outcome]
+      properties:
+        episodeId:
+          type: integer
+          format: int64
+        outcome:
+          $ref: "#/components/schemas/StateOutcome"
+        status:
+          $ref: "#/components/schemas/EpisodeStatus"
+        playedAt:
+          type: [integer, "null"]
+          format: int64
+          description: UTC epoch milliseconds.
+        positionSec:
+          type: integer
+          format: int32
+          minimum: 0
+        stateUpdatedAt:
+          type: integer
+          format: int64
+          description: UTC epoch milliseconds.
+      examples:
+        - episodeId: 502
+          outcome: STALE
+          status: PLAYED
+          playedAt: 1755000000000
+          positionSec: 2400
+          stateUpdatedAt: 1755000000000
+  examples:
+    FeedExample:
+      summary: A subscribed Feed
+      value:
+        id: 12
+        feedUrl: https://example.com/feeds/history.xml
+        title: Example History Podcast
+        author: Example Media
+        description: Stories from the past.
+        artworkUrl: https://example.com/art/history-600.jpg
+        priority: 0
+        listenOrder: NEWEST_FIRST
+        lastRefreshedAt: 1760000000000
+        subscribedAt: 1750000000000
+        rev: 1040
+    EpisodeExample:
+      summary: An Episode
+      value:
+        id: 501
+        feedId: 12
+        guid: example-history-ep-101
+        title: Episode 101
+        description: The one about Rome.
+        audioUrl: https://example.com/audio/ep101.mp3
+        publishedAt: 1759900000000
+        durationSec: 2700
+        artworkUrl: null
+        status: NEW
+        playedAt: null
+        positionSec: 0
+        stateUpdatedAt: 1759900000000
+        rev: 1041
+    SyncPageExample:
+      summary: A page with more to fetch
+      value:
+        feeds:
+          - id: 12
+            feedUrl: https://example.com/feeds/history.xml
+            title: Example History Podcast
+            author: Example Media
+            description: Stories from the past.
+            artworkUrl: https://example.com/art/history-600.jpg
+            priority: 0
+            listenOrder: NEWEST_FIRST
+            lastRefreshedAt: 1760000000000
+            subscribedAt: 1750000000000
+            rev: 1040
+        episodes:
+          - id: 501
+            feedId: 12
+            guid: example-history-ep-101
+            title: Episode 101
+            description: The one about Rome.
+            audioUrl: https://example.com/audio/ep101.mp3
+            publishedAt: 1759900000000
+            durationSec: 2700
+            artworkUrl: null
+            status: NEW
+            playedAt: null
+            positionSec: 0
+            stateUpdatedAt: 1759900000000
+            rev: 1041
+        tombstones:
+          - entityType: EPISODE
+            entityId: 480
+            rev: 1043
+        nextRev: 1043
+        hasMore: true
