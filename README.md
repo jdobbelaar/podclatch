@@ -65,11 +65,19 @@ This starts the server and its Postgres together. Run these from the repository 
 | `make down` | `docker compose down` | Remove the containers and network; the Postgres data is kept |
 | `make logs` | `docker compose logs -f server postgres` | Follow the logs |
 | `make test` | `docker compose -f docker-compose.test.yaml run --rm --build test` | Run the server tests in a container |
+| `make test-integration` | `uv run --directory server pytest tests_integration` | Run the end-to-end tests against a throwaway stack (server, Postgres, and a fake feed host) |
 | `make clean` | `docker compose down -v --remove-orphans` | Also delete the Postgres volume: **this erases all data** |
 
 **Ports.** The server listens on `127.0.0.1:8180` by default. It is not 8000 because other local projects commonly use 8000 (and 3000, 9090, 5432, and 5433, which this setup also avoids). Set `PODCLATCH_PORT` in `.env` to change it. It is bound to loopback only; to reach it from a phone on your LAN, set `PODCLATCH_BIND_ADDRESS=0.0.0.0` (anyone on the network can then reach the token-protected API, so only do this on a network you trust). Postgres is not published to the host by default. To open it for debugging, add the override file, which publishes it on `127.0.0.1:5442` (change with `PODCLATCH_POSTGRES_PORT`): `docker compose -f docker-compose.yaml -f docker-compose.debug.yaml up -d`, then `psql -h localhost -p 5442 -U podclatch podclatch`.
 
 **Tests.** `make test` runs the server tests (SQLite) in a container, so it needs only Docker and no `.env`. The host-side `uv run pytest` above still works and is unchanged.
+
+**Integration tests.** `make test-integration` runs the suite in `server/tests_integration/` over HTTP against the real production image and Postgres, with a small fake feed host standing in for publishers, so it needs no internet. The pytest session itself starts and removes the stack, running `docker compose -p podclatch-it -f docker-compose.yaml -f docker-compose.integration.yaml ...` through one helper, which is why the "Raw command" cell is the `uv` command and not a `docker compose` one. The project name `podclatch-it` gives it its own containers, network, and Postgres volume, so your dev stack and its data are never touched. It covers subscribe, Episode state, Sync, unsubscribe, conflicting writes, Refresh, persistence across a restart and a full down and up, authentication, and feed URL secrecy. `uv run pytest` and `make test` do not run it.
+
+- **Prerequisites:** Docker, [uv](https://docs.astral.sh/uv/), and a root `.env` with both `PODCLATCH_TOKEN` and `POSTGRES_PASSWORD` (the process environment is read first, then `.env`, as Compose does). Without them the run stops at once with a message naming `.env` and `.env.example`, before any container is created.
+- **Port:** the test stack publishes the server on `127.0.0.1:8180` (`PODCLATCH_PORT`), the same default as the dev stack. If the dev stack (`make up`) or anything else holds that port, the run fails fast and changes nothing; run `make down` or set `PODCLATCH_PORT=8181` for the run. The fake feed host is published only on a Docker-assigned loopback port, and Postgres is not published.
+- **Runtime:** about 1 minute once the image is built, a few minutes on a first run that has to build it and pull base images.
+- **Failures:** if a test fails or the stack does not start, the logs of all services are printed before the stack is removed. The stack is always removed (`down -v --remove-orphans`), also after a failure.
 
 ## Known limitations
 
