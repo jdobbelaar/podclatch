@@ -9,9 +9,9 @@ from podclatch_server.store import (
     EntityType,
     EpisodeStateChange,
     EpisodeStatus,
-    InMemoryStore,
     ListenOrder,
     StateOutcome,
+    Store,
     normalize_feed_url,
 )
 
@@ -24,7 +24,7 @@ def parsed(*guids: str) -> ParsedFeed:
     return ParsedFeed("T", "A", "D", "art", episodes)
 
 
-def all_revs(store: InMemoryStore, feed_ids: list[int]) -> list[int]:
+def all_revs(store: Store, feed_ids: list[int]) -> list[int]:
     revs = [f.rev for f in store.list_feeds()]
     for feed_id in feed_ids:
         revs += [e.rev for e in store.list_episodes(feed_id)]
@@ -32,16 +32,16 @@ def all_revs(store: InMemoryStore, feed_ids: list[int]) -> list[int]:
     return revs
 
 
-def test_rev_starts_at_zero_and_first_change_is_one():
-    store = InMemoryStore()
+def test_rev_starts_at_zero_and_first_change_is_one(new_store):
+    store = new_store()
     assert store.current_rev() == 0
     feed = store.add_feed("https://example.com/a", parsed(), 5)
     assert feed.rev == 1
     assert store.current_rev() == 1
 
 
-def test_subscribe_gives_every_changed_entity_its_own_rev():
-    store = InMemoryStore()
+def test_subscribe_gives_every_changed_entity_its_own_rev(new_store):
+    store = new_store()
     a = store.add_feed("https://example.com/a", parsed("e1", "e2"), 5)
     b = store.add_feed("https://example.com/b", parsed("e3"), 6)
     feeds = {f.id: f for f in store.list_feeds()}
@@ -53,8 +53,8 @@ def test_subscribe_gives_every_changed_entity_its_own_rev():
     assert store.current_rev() == max(revs) == 1 + 2 + 1 + 1 + 1 + 1 - 1  # a, 2 ep, shift a, b, ep
 
 
-def test_reorder_bumps_only_feeds_that_moved_and_noop_bumps_nothing():
-    store = InMemoryStore()
+def test_reorder_bumps_only_feeds_that_moved_and_noop_bumps_nothing(new_store):
+    store = new_store()
     ids = [store.add_feed(f"https://example.com/{i}", parsed(), 1).id for i in range(3)]
     # priorities now: ids[2]=0, ids[1]=1, ids[0]=2
     before = {f.id: f for f in store.list_feeds()}
@@ -69,8 +69,8 @@ def test_reorder_bumps_only_feeds_that_moved_and_noop_bumps_nothing():
     assert store.current_rev() == rev + 2
 
 
-def test_listen_order_bumps_only_on_change():
-    store = InMemoryStore()
+def test_listen_order_bumps_only_on_change(new_store):
+    store = new_store()
     feed = store.add_feed("https://example.com/a", parsed(), 1)
     rev = store.current_rev()
     assert store.set_listen_order(feed.id, ListenOrder.NEWEST_FIRST) == feed
@@ -79,8 +79,8 @@ def test_listen_order_bumps_only_on_change():
     assert changed.rev == rev + 1 == store.current_rev()
 
 
-def test_delete_gives_each_tombstone_and_shifted_feed_its_own_rev():
-    store = InMemoryStore()
+def test_delete_gives_each_tombstone_and_shifted_feed_its_own_rev(new_store):
+    store = new_store()
     a = store.add_feed("https://example.com/a", parsed("e1", "e2"), 1)
     store.add_feed("https://example.com/b", parsed(), 1)  # priority 0; a is 1
     c = store.add_feed("https://example.com/c", parsed(), 1)  # c 0, b 1, a 2
@@ -94,8 +94,8 @@ def test_delete_gives_each_tombstone_and_shifted_feed_its_own_rev():
     assert [(t.entity_type, t.entity_id) for t in tombstones][0] == (EntityType.FEED, c.id)
 
 
-def test_rejected_calls_consume_no_rev_or_id():
-    store = InMemoryStore()
+def test_rejected_calls_consume_no_rev_or_id(new_store):
+    store = new_store()
     a = store.add_feed("https://example.com/a", parsed("e1"), 1)
     rev = store.current_rev()
     with pytest.raises(ConflictError):
@@ -112,8 +112,8 @@ def test_rejected_calls_consume_no_rev_or_id():
     assert [e.id for e in store.list_episodes(b.id)] == [2]
 
 
-def test_revs_only_increase_across_a_mixed_sequence():
-    store = InMemoryStore()
+def test_revs_only_increase_across_a_mixed_sequence(new_store):
+    store = new_store()
     seen = [store.current_rev()]
     a = store.add_feed("https://example.com/a", parsed("e1"), 1)
     seen.append(store.current_rev())
@@ -128,8 +128,8 @@ def test_revs_only_increase_across_a_mixed_sequence():
     assert seen == sorted(seen) and len(set(seen)) == len(seen)
 
 
-def test_duplicate_check_is_repeated_inside_the_atomic_insert():
-    store = InMemoryStore()
+def test_duplicate_check_is_repeated_inside_the_atomic_insert(new_store):
+    store = new_store()
     barrier = threading.Barrier(2)
     outcomes: list[object] = []
 
@@ -152,8 +152,8 @@ def test_duplicate_check_is_repeated_inside_the_atomic_insert():
     assert len(store.list_episodes(store.list_feeds()[0].id)) == 1
 
 
-def test_returned_values_cannot_change_the_store():
-    store = InMemoryStore()
+def test_returned_values_cannot_change_the_store(new_store):
+    store = new_store()
     feed = store.add_feed("https://example.com/a", parsed("e1"), 1)
     with pytest.raises(FrozenInstanceError):
         feed.priority = 7  # type: ignore[misc]
@@ -168,14 +168,14 @@ def test_returned_values_cannot_change_the_store():
     assert store.list_tombstones() == []
 
 
-def test_episodes_are_unique_per_feed_and_guid():
-    store = InMemoryStore()
+def test_episodes_are_unique_per_feed_and_guid(new_store):
+    store = new_store()
     feed = store.add_feed("https://example.com/a", parsed("e1", "e1", "e2"), 1)
     assert [e.guid for e in store.list_episodes(feed.id)] == ["e1", "e2"]
 
 
-def test_feeds_do_not_share_state_between_stores():
-    one, two = InMemoryStore(), InMemoryStore()
+def test_feeds_do_not_share_state_between_stores(new_store):
+    one, two = new_store(), new_store()
     one.add_feed("https://example.com/a", parsed(), 1)
     assert two.list_feeds() == []
     assert two.current_rev() == 0
@@ -209,8 +209,8 @@ def test_normalize_survives_unparseable_urls():
 # --- US-25 store methods, called through the Store interface -------------------------------------
 
 
-def test_list_feed_episodes_orders_and_rejects_unknown_feed():
-    store = InMemoryStore()
+def test_list_feed_episodes_orders_and_rejects_unknown_feed(new_store):
+    store = new_store()
     feed = store.add_feed("https://example.com/a", parsed("x", "y"), 5)
     ordered = store.list_feed_episodes(feed.id)
     assert [e.guid for e in ordered] == ["y", "x"]  # equal publishedAt: id descending
@@ -218,8 +218,8 @@ def test_list_feed_episodes_orders_and_rejects_unknown_feed():
         store.list_feed_episodes(999)
 
 
-def test_apply_episode_states_is_last_write_wins_with_one_rev_per_applied_item():
-    store = InMemoryStore()
+def test_apply_episode_states_is_last_write_wins_with_one_rev_per_applied_item(new_store):
+    store = new_store()
     store.add_feed("https://example.com/a", parsed("x"), 5)
     episode = store.list_episodes(1)[0]
     rev = store.current_rev()
@@ -237,8 +237,8 @@ def test_apply_episode_states_is_last_write_wins_with_one_rev_per_applied_item()
     assert store.list_episodes(1)[0].rev == rev + 1
 
 
-def test_sync_page_cuts_at_limit_and_reports_has_more():
-    store = InMemoryStore()
+def test_sync_page_cuts_at_limit_and_reports_has_more(new_store):
+    store = new_store()
     store.add_feed("https://example.com/a", parsed("x", "y"), 5)  # revs 1 (feed), 2, 3
     page = store.sync_page(0, 2)
     assert (page.next_rev, page.has_more) == (2, True)
@@ -249,8 +249,8 @@ def test_sync_page_cuts_at_limit_and_reports_has_more():
     assert (empty.next_rev, empty.has_more) == (50, False)
 
 
-def test_apply_refresh_inserts_unseen_only_and_bumps_feed_only_on_metadata_change():
-    store = InMemoryStore()
+def test_apply_refresh_inserts_unseen_only_and_bumps_feed_only_on_metadata_change(new_store):
+    store = new_store()
     feed = store.add_feed("https://example.com/a", parsed("x"), 5)
     rev = store.current_rev()
     same = store.apply_refresh(feed.id, parsed("x"), 9)
@@ -264,8 +264,8 @@ def test_apply_refresh_inserts_unseen_only_and_bumps_feed_only_on_metadata_chang
     assert store.get_feed(feed.id).rev == rev + 2
 
 
-def test_apply_refresh_on_deleted_feed_changes_nothing():
-    store = InMemoryStore()
+def test_apply_refresh_on_deleted_feed_changes_nothing(new_store):
+    store = new_store()
     feed = store.add_feed("https://example.com/a", parsed("x"), 5)
     store.delete_feed(feed.id)
     rev = store.current_rev()

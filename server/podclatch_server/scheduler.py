@@ -93,3 +93,4 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if scheduler is not None:
             scheduler.stop()
             logger.info("refresh scheduler stopped")
+        store_for_app(app).close()  # after the scheduler has stopped
