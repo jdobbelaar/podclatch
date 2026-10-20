@@ -28,3 +28,6 @@ Thumbs.db
 
 # Internal notes, not for the repo
 _internal/
+
+# Written by Android Studio; machine-specific
+android/gradle/gradle-daemon-jvm.properties
