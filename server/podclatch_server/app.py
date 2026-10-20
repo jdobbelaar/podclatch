@@ -3,7 +3,8 @@
 from fastapi import FastAPI
 
 from podclatch_server.config import Settings, load_settings
-from podclatch_server.routes import health
+from podclatch_server.errors import register_error_handlers
+from podclatch_server.routes import feeds, health
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -13,5 +14,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # No interactive docs or schema routes: only /healthz may be reachable without the token.
     app = FastAPI(title="PodClatch Server", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
+    register_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(feeds.router)
     return app
