@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Show</title>
+  <entry>
+    <title>One</title>
+    <id>urn:example:1</id>
+    <link rel="enclosure" href="https://example.com/1.mp3"/>
+  </entry>
+</feed>

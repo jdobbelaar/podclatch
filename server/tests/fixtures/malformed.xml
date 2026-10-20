@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Broken & Loved</title>
+    <item>
+      <title>Still here<br></title>
+      <guid>m-1</guid>
+      <enclosure url="https://example.com/m1.mp3" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>
