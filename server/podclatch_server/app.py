@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from podclatch_server.config import Settings, load_settings
 from podclatch_server.errors import register_error_handlers
-from podclatch_server.routes import feeds, health
+from podclatch_server.routes import feeds, health, search
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -17,4 +17,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(feeds.router)
+    app.include_router(search.router)
     return app
