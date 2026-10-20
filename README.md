@@ -41,6 +41,13 @@ Run these from `server/`:
 6. Run the tests: `uv run pytest`
 7. Run the linter: `uv run ruff check .`
 
+## Known limitations
+
+These are deliberate trade-offs for a single-user app, recorded so they are not mistaken for oversights.
+
+- **`lastRefreshedAt` can be stale in Sync.** When the server refreshes a Feed and nothing else about it changed, it updates that Feed's `lastRefreshedAt` but does not count it as a change for Sync. Counting it would make every refresh look like a change to every Feed and resend the whole subscription list. The app does not display this field, and `GET /v1/feeds` always returns the current value, so the lag only shows in the phone's local cache. If a screen ever needs it, read it from `GET /v1/feeds` or send it in Sync only when something else changes.
+- **Deletion records (tombstones) are never pruned.** Unsubscribing leaves a small record for the Feed and each of its Episodes, so a phone that was offline learns to delete its local copy and audio files. These records are tiny, and only a full re-sync from the beginning transfers all of them, so the cost is negligible at single-user scale. If it ever matters, delete tombstones older than a cutoff (for example 90 days) and make any phone offline longer than that do a full re-sync.
+
 ## Status
 
 Pre-development: only the specification and the agent-team documents exist so far. The feature list, screenshots, and run steps will be added when the app and server exist.
