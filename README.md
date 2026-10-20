@@ -29,6 +29,18 @@ Since one of the goals of this project was to displace the user's favorite podca
 - Although the user prefers to listen at an accelerated playback speed, the user's wife dislikes the fast talking, and the prior app, in Android Auto mode, does not provide an easy way to change the playback speed to enable the user to accommodate his wife.  The user's new app has a convenient one-touch playback speed toggle to make it easy to satisfy the wife when she is in the car, and the user when she is not. 
 
 
+## Running the server
+
+Run these from `server/`:
+
+1. Install [uv](https://docs.astral.sh/uv/). It provides Python 3.12 automatically.
+2. `uv sync`
+3. `cp .env.example .env`, then set `PODCLATCH_TOKEN` in `.env` to a token of your choosing. The server refuses to start without one.
+4. Load the variables and start the server: `set -a; . ./.env; set +a; uv run uvicorn --factory podclatch_server.app:create_app`
+5. Check it: `curl http://localhost:8000/healthz` returns `{"status":"ok"}`.
+6. Run the tests: `uv run pytest`
+7. Run the linter: `uv run ruff check .`
+
 ## Status
 
 Pre-development: only the specification and the agent-team documents exist so far. The feature list, screenshots, and run steps will be added when the app and server exist.
