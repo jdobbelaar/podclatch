@@ -7,8 +7,11 @@ from podclatch_server.errors import ConflictError, NotFoundError, UnprocessableE
 from podclatch_server.feeds import ParsedEpisode, ParsedFeed
 from podclatch_server.store import (
     EntityType,
+    EpisodeStateChange,
+    EpisodeStatus,
     InMemoryStore,
     ListenOrder,
+    StateOutcome,
     normalize_feed_url,
 )
 
@@ -201,3 +204,70 @@ def test_normalize_feed_url(a, b, same):
 def test_normalize_survives_unparseable_urls():
     assert normalize_feed_url(" http://[bad ") == "http://[bad"
     assert normalize_feed_url("https://example.com:notaport/x") == "https://example.com:notaport/x"
+
+
+# --- US-25 store methods, called through the Store interface -------------------------------------
+
+
+def test_list_feed_episodes_orders_and_rejects_unknown_feed():
+    store = InMemoryStore()
+    feed = store.add_feed("https://example.com/a", parsed("x", "y"), 5)
+    ordered = store.list_feed_episodes(feed.id)
+    assert [e.guid for e in ordered] == ["y", "x"]  # equal publishedAt: id descending
+    with pytest.raises(NotFoundError):
+        store.list_feed_episodes(999)
+
+
+def test_apply_episode_states_is_last_write_wins_with_one_rev_per_applied_item():
+    store = InMemoryStore()
+    store.add_feed("https://example.com/a", parsed("x"), 5)
+    episode = store.list_episodes(1)[0]
+    rev = store.current_rev()
+    change = EpisodeStateChange(episode.id, EpisodeStatus.PLAYED, 50, 9, 2000)
+    stale = EpisodeStateChange(episode.id, EpisodeStatus.NEW, None, 0, 2000)
+    unknown = EpisodeStateChange(12345, EpisodeStatus.NEW, None, 0, 9999)
+    results = store.apply_episode_states([change, stale, unknown])
+    assert [r.outcome for r in results] == [
+        StateOutcome.APPLIED,
+        StateOutcome.STALE,
+        StateOutcome.UNKNOWN_EPISODE,
+    ]
+    assert results[1].position_sec == 9 and results[2].status is None
+    assert store.current_rev() == rev + 1
+    assert store.list_episodes(1)[0].rev == rev + 1
+
+
+def test_sync_page_cuts_at_limit_and_reports_has_more():
+    store = InMemoryStore()
+    store.add_feed("https://example.com/a", parsed("x", "y"), 5)  # revs 1 (feed), 2, 3
+    page = store.sync_page(0, 2)
+    assert (page.next_rev, page.has_more) == (2, True)
+    assert len(page.feeds) == 1 and len(page.episodes) == 1
+    last = store.sync_page(page.next_rev, 2)
+    assert (last.next_rev, last.has_more, len(last.episodes)) == (3, False, 1)
+    empty = store.sync_page(50, 5)
+    assert (empty.next_rev, empty.has_more) == (50, False)
+
+
+def test_apply_refresh_inserts_unseen_only_and_bumps_feed_only_on_metadata_change():
+    store = InMemoryStore()
+    feed = store.add_feed("https://example.com/a", parsed("x"), 5)
+    rev = store.current_rev()
+    same = store.apply_refresh(feed.id, parsed("x"), 9)
+    assert (same.inserted, same.feed_changed) == (0, False)
+    assert store.current_rev() == rev and store.get_feed(feed.id).last_refreshed_at == 9
+    more = store.apply_refresh(feed.id, parsed("x", "y", "y"), 10)
+    assert (more.inserted, more.feed_changed) == (1, False)
+    assert store.current_rev() == rev + 1
+    renamed = ParsedFeed("New", "A", "D", "art", [])
+    assert store.apply_refresh(feed.id, renamed, 11).feed_changed is True
+    assert store.get_feed(feed.id).rev == rev + 2
+
+
+def test_apply_refresh_on_deleted_feed_changes_nothing():
+    store = InMemoryStore()
+    feed = store.add_feed("https://example.com/a", parsed("x"), 5)
+    store.delete_feed(feed.id)
+    rev = store.current_rev()
+    assert store.apply_refresh(feed.id, parsed("x", "y"), 9) is None
+    assert store.current_rev() == rev and store.list_feeds() == []
