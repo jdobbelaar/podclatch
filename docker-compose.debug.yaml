@@ -1,0 +1,6 @@
+# Debug override: publishes Postgres on loopback for psql.
+#   docker compose -f docker-compose.yaml -f docker-compose.debug.yaml up -d
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${PODCLATCH_POSTGRES_PORT:-5442}:5432"

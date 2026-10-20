@@ -58,3 +58,39 @@ jobs:
           test "$passed" -gt 0
           ! grep -q "PODCLATCH_TEST_DATABASE_URL is not set" pytest-postgres.log
       - run: uv run ruff check .
+
+  compose:
+    # Builds the image, starts the whole stack with the same command as `make up`, and smoke-tests
+    # it. The token and password are generated at run time and masked; they are not secrets in the
+    # repository.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create a throwaway .env
+        run: |
+          token=$(openssl rand -hex 16)
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$token"
+          echo "::add-mask::$password"
+          printf 'PODCLATCH_TOKEN=%s\nPOSTGRES_PASSWORD=%s\n' "$token" "$password" > .env
+      - name: Build and start the stack, waiting for health
+        run: docker compose up -d --build --wait
+      - name: Smoke test
+        run: |
+          set -eu
+          token=$(sed -n 's/^PODCLATCH_TOKEN=//p' .env)
+          body=$(curl -fsS http://localhost:8180/healthz)
+          echo "healthz body: $body"
+          test "$body" = '{"status":"ok"}'
+          authed=$(curl -sS -o feeds.json -w '%{http_code}' -H "Authorization: Bearer $token" http://localhost:8180/v1/feeds)
+          echo "authenticated GET /v1/feeds: $authed"
+          test "$authed" = 200
+          anon=$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:8180/v1/feeds)
+          echo "unauthenticated GET /v1/feeds: $anon"
+          test "$anon" = 401
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
