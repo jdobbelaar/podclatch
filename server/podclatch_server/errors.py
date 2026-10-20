@@ -11,6 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from podclatch_server.auth import is_authenticated, require_token, unauthorized_response
+
 
 class ApiError(Exception):
     """An error with an HTTP status and a human-readable message. The message is the `detail`."""
@@ -55,7 +57,31 @@ async def _api_error(request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(_body(exc.detail), status_code=exc.status_code)
 
 
+def _requires_token(route: object) -> bool:
+    """Does the matched route (or any of its dependencies) use `require_token`?
+
+    Falls back to "yes" for everything except /healthz when no route was matched.
+    """
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return False
+    stack = [dependant]
+    while stack:
+        current = stack.pop()
+        if current.call is require_token:
+            return True
+        stack.extend(current.dependencies)
+    return False
+
+
 async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # FastAPI validates (and decodes) the body before the router-level auth dependency runs, so
+    # an unauthenticated request would get a 422 that reveals validation details. Answer it with
+    # the same 401 `require_token` gives. Nothing from the body or the token is read or logged.
+    route = request.scope.get("route")
+    protected = _requires_token(route) if route is not None else request.url.path != "/healthz"
+    if protected and not is_authenticated(request):
+        return unauthorized_response()
     return JSONResponse(_body(_validation_detail(exc)), status_code=422)
 
 
