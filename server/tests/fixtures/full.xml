@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>  Example Show  </title>
+    <managingEditor>editor@example.com (Ed Itor)</managingEditor>
+    <itunes:author> Example Author </itunes:author>
+    <itunes:summary>Summary text</itunes:summary>
+    <description>Channel description</description>
+    <image><url>https://example.com/channel-image.jpg</url></image>
+    <itunes:image href="https://example.com/itunes-image.jpg"/>
+    <item>
+      <title>Episode one</title>
+      <guid>ep-1</guid>
+      <pubDate>Mon, 02 Jan 2023 10:00:00 GMT</pubDate>
+      <itunes:duration>12:34</itunes:duration>
+      <itunes:image href="https://example.com/ep1.jpg"/>
+      <enclosure url="https://example.com/ep1.mp3" type="audio/mpeg" length="1"/>
+      <description>Plain description</description>
+      <content:encoded><![CDATA[<p>Rich</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Episode two</title>
+      <guid>ep-2</guid>
+      <pubDate>Tue, 03 Jan 2023 10:00:00 GMT</pubDate>
+      <enclosure url="https://example.com/ep2.mp3" type="audio/mpeg" length="1"/>
+    </item>
+    <item>
+      <title>No enclosure</title>
+      <guid>ep-3</guid>
+    </item>
+  </channel>
+</rss>
