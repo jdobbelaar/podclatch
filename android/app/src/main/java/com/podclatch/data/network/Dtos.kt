@@ -132,6 +132,17 @@ data class SubscribeRequest(val feedUrl: String) {
     override fun toString(): String = "SubscribeRequest(feedUrl=***)"
 }
 
+/** One item of the `GET /v1/search` answer. The address can hold a secret, so [toString] hides it. */
+@Serializable
+data class SearchResultDto(
+    val feedUrl: String,
+    val title: String,
+    val author: String,
+    val artworkUrl: String,
+) {
+    override fun toString(): String = "SearchResultDto(title=$title)"
+}
+
 /** Body of `PUT /v1/feeds/order`: every subscribed Feed id exactly once, highest priority first. */
 @Serializable
 data class ReorderRequest(val feedIds: List<Long>)

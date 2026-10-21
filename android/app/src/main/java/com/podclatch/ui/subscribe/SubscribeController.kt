@@ -139,6 +139,31 @@ class SubscribeController(
         return true
     }
 
+    /**
+     * Subscribes to [address] exactly as given (a search result's address, as the server returned it):
+     * no trimming and no field validation. Does nothing while a subscribe runs. Returns whether a request
+     * started.
+     */
+    fun subscribeTo(address: String): Boolean {
+        var started = false
+        val running = uiState.value.busy
+        local.update { l ->
+            started = false
+            if (l.submitting || running || address.isEmpty()) {
+                l
+            } else {
+                started = true
+                l.copy(submitting = true, message = null, validationError = null)
+            }
+        }
+        if (!started) return false
+        scope.launch { run(address) }
+        return true
+    }
+
+    /** Drops the server message under the field or the preview (the preview opening or closing). */
+    fun clearMessage() = local.update { it.copy(message = null) }
+
     private suspend fun run(address: String) {
         val result = try {
             repo.subscribe(address)

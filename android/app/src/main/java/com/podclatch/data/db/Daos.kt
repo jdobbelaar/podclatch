@@ -45,6 +45,10 @@ interface FeedDao {
     @Query("SELECT COUNT(*) FROM feed")
     fun count(): Flow<Int>
 
+    /** The address of every cached Feed, for the Subscribe view's "Subscribed" marker. */
+    @Query("SELECT feedUrl FROM feed")
+    fun feedUrls(): Flow<List<String>>
+
     /** The Feeds tab: per Feed the count of NEW Episodes (downloaded or not), in server order. */
     @Query(
         "SELECT f.id AS id, f.title AS title, f.author AS author, f.artworkUrl AS artworkUrl, " +
