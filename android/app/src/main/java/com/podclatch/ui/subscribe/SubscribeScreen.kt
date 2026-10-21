@@ -11,7 +11,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,17 +27,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.podclatch.R
+import com.podclatch.domain.FeedUrlProblem
 import com.podclatch.ui.BackTopBar
 
 /**
@@ -65,7 +74,8 @@ fun SubscribeScreen(
             SubscribeByUrlSection(
                 state = state,
                 onTextChange = vm::onTextChange,
-                onSubscribe = vm::subscribe,
+                onSubscribe = { vm.subscribe() },
+                onClear = vm::clear,
             )
         }
     }
@@ -77,19 +87,57 @@ fun SubscribeByUrlSection(
     state: SubscribeUiState,
     onTextChange: (String) -> Unit,
     onSubscribe: () -> Unit,
+    onClear: () -> Unit,
 ) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    val submit = {
+        if (state.canSubscribe) {
+            keyboard?.hide()
+            onSubscribe()
+        }
+    }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(
             value = state.text,
             onValueChange = onTextChange,
             label = { Text(stringResource(R.string.subscribe_url_label)) },
+            placeholder = { Text(stringResource(R.string.subscribe_url_hint)) },
             singleLine = true,
             enabled = !state.busy,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            isError = state.validationError != null,
+            trailingIcon = if (state.text.isNotEmpty() && !state.busy) {
+                {
+                    IconButton(onClick = onClear, modifier = Modifier.size(48.dp).testTag("subscribe_url_clear")) {
+                        Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.subscribe_clear_description))
+                    }
+                }
+            } else {
+                null
+            },
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Uri,
+                imeAction = ImeAction.Go,
+            ),
+            keyboardActions = KeyboardActions(onGo = { submit() }),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("subscribe_url_field"),
         )
+        state.validationError?.let { problem ->
+            Text(
+                stringResource(
+                    if (problem == FeedUrlProblem.BAD_SCHEME) R.string.subscribe_error_scheme else R.string.subscribe_error_incomplete,
+                ),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics { liveRegion = LiveRegionMode.Polite }
+                    .testTag("subscribe_url_error"),
+            )
+        }
         Button(
-            onClick = onSubscribe,
+            onClick = submit,
             enabled = state.canSubscribe,
             modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).testTag("subscribe_url_button"),
         ) {
