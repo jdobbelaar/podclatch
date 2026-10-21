@@ -3,6 +3,9 @@ package com.podclatch.ui.subscribe
 import com.podclatch.data.network.ApiError
 import com.podclatch.data.repo.SubscribeRepository
 import com.podclatch.data.repo.SubscribeResult
+import com.podclatch.domain.FeedUrlProblem
+import com.podclatch.domain.FeedUrlResult
+import com.podclatch.domain.FeedUrlValidator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +59,8 @@ fun addressToSend(fieldText: String): String = fieldText.trim()
 
 data class SubscribeUiState(
     val text: String = "",
+    /** Why the typed address was not sent; cleared as soon as the text changes. */
+    val validationError: FeedUrlProblem? = null,
     /** From the tap until the outcome is known, including the Sync (or while another visit's request runs). */
     val busy: Boolean = false,
     val message: SubscribeMessage? = null,
@@ -73,33 +78,60 @@ data class SubscribeUiState(
 class SubscribeController(
     private val repo: SubscribeRepository,
     private val scope: CoroutineScope,
+    initialText: String = "",
+    /** Told every new field text, so the ViewModel can keep it in its `SavedStateHandle` (and nowhere else). */
+    private val onTextChanged: (String) -> Unit = {},
 ) {
     private data class Local(
         val text: String = "",
+        val validationError: FeedUrlProblem? = null,
         val submitting: Boolean = false,
         val message: SubscribeMessage? = null,
         val outcome: SubscribeOutcome? = null,
     )
 
-    private val local = MutableStateFlow(Local())
+    private val local = MutableStateFlow(Local(text = initialText))
 
     val uiState: StateFlow<SubscribeUiState> = combine(local, repo.inProgress) { l, running ->
-        SubscribeUiState(l.text, l.submitting || running, l.message, l.outcome)
+        SubscribeUiState(l.text, l.validationError, l.submitting || running, l.message, l.outcome)
     }.stateIn(scope, SharingStarted.Eagerly, SubscribeUiState())
 
-    fun onTextChange(text: String) = local.update { it.copy(text = text, message = null) }
+    fun onTextChange(text: String) {
+        local.update { it.copy(text = text, message = null, validationError = null) }
+        onTextChanged(text)
+    }
 
-    /** Starts a subscribe unless one is running or the trimmed text is empty. Returns whether it started. */
+    /** Empties the field, the validation error, and the server message. Does nothing while a subscribe runs. */
+    fun clear() {
+        var cleared = false
+        local.update { l ->
+            cleared = !(l.submitting || uiState.value.busy)
+            if (cleared) l.copy(text = "", message = null, validationError = null) else l
+        }
+        if (cleared) onTextChanged("")
+    }
+
+    /**
+     * Validates the typed address, then starts a subscribe unless one is running or the trimmed text is
+     * empty. An unacceptable address sends nothing and sets [SubscribeUiState.validationError] (clearing any
+     * earlier server message). Returns whether a request started.
+     */
     fun subscribe(): Boolean {
         var address: String? = null
+        val running = uiState.value.busy
         local.update { l ->
             address = null
             val trimmed = addressToSend(l.text)
-            if (l.submitting || trimmed.isEmpty()) {
+            if (l.submitting || running || trimmed.isEmpty()) {
                 l
             } else {
-                address = trimmed
-                l.copy(submitting = true, message = null)
+                when (val check = FeedUrlValidator.validate(trimmed)) {
+                    is FeedUrlResult.NotAcceptable -> l.copy(validationError = check.problem, message = null)
+                    is FeedUrlResult.Acceptable -> {
+                        address = check.url
+                        l.copy(submitting = true, message = null, validationError = null)
+                    }
+                }
             }
         }
         val toSend = address ?: return false

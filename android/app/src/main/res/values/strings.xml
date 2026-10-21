@@ -63,6 +63,10 @@
 
     <!-- Subscribe -->
     <string name="subscribe_url_label">Feed address</string>
+    <string name="subscribe_url_hint">https://example.com/feed.xml</string>
+    <string name="subscribe_clear_description">Clear address</string>
+    <string name="subscribe_error_scheme">Enter a feed address that starts with http:// or https://.</string>
+    <string name="subscribe_error_incomplete">That does not look like a complete address.</string>
     <string name="subscribe_button">Subscribe</string>
     <string name="subscribe_busy">Subscribing...</string>
     <string name="subscribe_busy_description">Subscribing</string>

@@ -6,6 +6,7 @@ import com.podclatch.data.repo.SubscribeRepository
 import com.podclatch.data.repo.SubscribeResult
 import com.podclatch.domain.DiskFileDeleter
 import com.podclatch.domain.FailureReason
+import com.podclatch.domain.FeedUrlProblem
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.TokenRejection
 import com.podclatch.ui.feeds.FeedsMessage
@@ -170,5 +171,70 @@ class SubscribeControllerTest {
         controller.onTextChange("http://h/x.xml")
         controller.subscribe()
         assertEquals(SubscribeMessage.Unexpected, await { it.message != null }.message)
+    }
+
+    // ---- Validation, Clear, and restore ----
+
+    @Test
+    fun theTrimmedTextAsTypedReachesTheRepository() {
+        controller.onTextChange("  HTTP://Feedhost:8080/Feeds/A.xml?x=1#frag ")
+        assertTrue(controller.subscribe())
+        await { it.outcome != null || it.message != null }
+        assertEquals(listOf("HTTP://Feedhost:8080/Feeds/A.xml?x=1#frag"), api.subscribeRequests)
+    }
+
+    @Test
+    fun anUnacceptableAddressSendsNothingKeepsTheTextAndClearsTheServerMessage() {
+        api.subscribeHandler = { throw ApiException(ApiError.Http(409, "Already subscribed to this feed.")) }
+        controller.onTextChange("http://h/x.xml")
+        controller.subscribe()
+        await { it.message != null }
+
+        controller.onTextChange("ftp://example.com/x")
+        assertFalse(controller.subscribe())
+        var state = await { it.validationError != null }
+        assertEquals(FeedUrlProblem.BAD_SCHEME, state.validationError)
+        assertNull(state.message)
+        assertEquals("ftp://example.com/x", state.text)
+        assertTrue(state.canSubscribe)
+
+        controller.onTextChange("https://")
+        controller.subscribe()
+        state = await { it.validationError != null }
+        assertEquals(FeedUrlProblem.INCOMPLETE, state.validationError)
+
+        controller.onTextChange("https://e")
+        assertNull(await { it.text == "https://e" }.validationError)
+        assertEquals(1, api.subscribeRequests.size)
+    }
+
+    @Test
+    fun clearEmptiesTheFieldTheErrorAndTheMessageAndReportsTheText() {
+        val seen = mutableListOf<String>()
+        val c = SubscribeController(SubscribeRepository(api, engine, rejection), scope, "http://h/restored.xml") { seen += it }
+        assertEquals("http://h/restored.xml", runBlocking { withTimeout(5_000) { c.uiState.first { it.text.isNotEmpty() } } }.text)
+        c.onTextChange("nope")
+        c.subscribe()
+        runBlocking { withTimeout(5_000) { c.uiState.first { it.validationError != null } } }
+        c.clear()
+        val state = runBlocking { withTimeout(5_000) { c.uiState.first { it.text.isEmpty() } } }
+        assertNull(state.validationError)
+        assertNull(state.message)
+        assertEquals(listOf("nope", ""), seen)
+    }
+
+    @Test
+    fun clearAndSubscribeDoNothingWhileASubscribeIsRunning() = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        api.subscribeHandler = { release.await(); feedDto(5) }
+        controller.onTextChange("http://h/x.xml")
+        assertTrue(controller.subscribe())
+        await { it.busy }
+        controller.clear()
+        assertFalse(controller.subscribe())
+        assertEquals("http://h/x.xml", controller.uiState.value.text)
+        release.complete(Unit)
+        await { it.outcome != null }
+        assertEquals(1, api.subscribeRequests.size)
     }
 }
