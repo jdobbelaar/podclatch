@@ -393,5 +393,7 @@ private class ScriptedApi : PodClatchApi {
 
     override suspend fun unsubscribeFeed(feedId: Long) = Unit
 
+    override suspend fun subscribeFeed(feedUrl: String): FeedDto = throw UnsupportedOperationException()
+
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> = emptyList()
 }
