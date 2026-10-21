@@ -21,6 +21,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -31,6 +32,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class SubscribeControllerTest {
@@ -47,9 +49,18 @@ class SubscribeControllerTest {
         scope.cancel()
     }
 
-    private fun await(condition: (SubscribeUiState) -> Boolean): SubscribeUiState = runBlocking {
-        withTimeout(5_000) { controller.uiState.first(condition) }
-    }
+    private fun await(condition: (SubscribeUiState) -> Boolean): SubscribeUiState = awaitState(controller, condition)
+
+    /** Waits for [condition] on [c]'s state and fails fast, with a clear message, instead of hanging. */
+    private fun awaitState(c: SubscribeController, condition: (SubscribeUiState) -> Boolean): SubscribeUiState =
+        runBlocking {
+            try {
+                withTimeout(5_000) { c.uiState.first(condition) }
+            } catch (e: TimeoutCancellationException) {
+                fail("The expected state was not reached within 5 s; the last state was ${c.uiState.value.copy(text = "<hidden>")}")
+                throw e
+            }
+        }
 
     // ---- The mapping from result to message ----
 
@@ -174,6 +185,8 @@ class SubscribeControllerTest {
     }
 
     // ---- Validation, Clear, and restore ----
+    // Every wait below is for the exact END state that is asserted, never for "some error" or "not busy",
+    // so a state published by an earlier step can never satisfy it.
 
     @Test
     fun theTrimmedTextAsTypedReachesTheRepository() {
@@ -188,53 +201,56 @@ class SubscribeControllerTest {
         api.subscribeHandler = { throw ApiException(ApiError.Http(409, "Already subscribed to this feed.")) }
         controller.onTextChange("http://h/x.xml")
         controller.subscribe()
-        await { it.message != null }
+        await { it.message == SubscribeMessage.AlreadySubscribed && !it.busy }
 
         controller.onTextChange("ftp://example.com/x")
         assertFalse(controller.subscribe())
-        var state = await { it.validationError != null }
-        assertEquals(FeedUrlProblem.BAD_SCHEME, state.validationError)
-        assertNull(state.message)
-        assertEquals("ftp://example.com/x", state.text)
-        assertTrue(state.canSubscribe)
+        val scheme = await { it.text == "ftp://example.com/x" && it.validationError == FeedUrlProblem.BAD_SCHEME && it.message == null }
+        assertTrue(scheme.canSubscribe)
 
         controller.onTextChange("https://")
-        controller.subscribe()
-        state = await { it.validationError != null }
-        assertEquals(FeedUrlProblem.INCOMPLETE, state.validationError)
+        assertFalse(controller.subscribe())
+        await { it.text == "https://" && it.validationError == FeedUrlProblem.INCOMPLETE && it.message == null }
 
         controller.onTextChange("https://e")
-        assertNull(await { it.text == "https://e" }.validationError)
+        await { it.text == "https://e" && it.validationError == null && it.message == null }
         assertEquals(1, api.subscribeRequests.size)
     }
 
     @Test
     fun clearEmptiesTheFieldTheErrorAndTheMessageAndReportsTheText() {
-        val seen = mutableListOf<String>()
+        val seen = java.util.concurrent.CopyOnWriteArrayList<String>()
         val c = SubscribeController(SubscribeRepository(api, engine, rejection), scope, "http://h/restored.xml") { seen += it }
-        assertEquals("http://h/restored.xml", runBlocking { withTimeout(5_000) { c.uiState.first { it.text.isNotEmpty() } } }.text)
+        awaitState(c) { it.text == "http://h/restored.xml" }
         c.onTextChange("nope")
-        c.subscribe()
-        runBlocking { withTimeout(5_000) { c.uiState.first { it.validationError != null } } }
+        assertFalse(c.subscribe())
+        awaitState(c) { it.text == "nope" && it.validationError == FeedUrlProblem.BAD_SCHEME }
         c.clear()
-        val state = runBlocking { withTimeout(5_000) { c.uiState.first { it.text.isEmpty() } } }
-        assertNull(state.validationError)
-        assertNull(state.message)
-        assertEquals(listOf("nope", ""), seen)
+        awaitState(c) { it.text.isEmpty() && it.validationError == null && it.message == null }
+        assertEquals(listOf("nope", ""), seen.toList())
     }
 
     @Test
-    fun clearAndSubscribeDoNothingWhileASubscribeIsRunning() = runBlocking {
+    fun clearAndSubscribeDoNothingWhileASubscribeIsRunning() {
+        val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        api.subscribeHandler = { release.await(); feedDto(5) }
-        controller.onTextChange("http://h/x.xml")
-        assertTrue(controller.subscribe())
-        await { it.busy }
-        controller.clear()
-        assertFalse(controller.subscribe())
-        assertEquals("http://h/x.xml", controller.uiState.value.text)
+        api.subscribeHandler = { entered.complete(Unit); release.await(); feedDto(5) }
+        val seen = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val c = SubscribeController(SubscribeRepository(api, engine, rejection), scope, "http://h/x.xml") { seen += it }
+        awaitState(c) { it.text == "http://h/x.xml" }
+        assertTrue(c.subscribe())
+        // The fake is now blocked inside the subscribe call, so the request is running for certain.
+        runBlocking { withTimeout(5_000) { entered.await() } }
+        awaitState(c) { it.busy }
+
+        c.clear()
+        assertFalse(c.subscribe())
+        assertEquals("clear() must not touch the saved text while busy", emptyList<String>(), seen.toList())
+
         release.complete(Unit)
-        await { it.outcome != null }
+        // The state that carries the outcome also carries the text: it must still be the original.
+        val done = awaitState(c) { it.outcome != null && !it.busy }
+        assertEquals("http://h/x.xml", done.text)
         assertEquals(1, api.subscribeRequests.size)
     }
 }
