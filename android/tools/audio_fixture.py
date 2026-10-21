@@ -114,6 +114,11 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _finish(self, status, headers, body_chunks, send_body):
+        # Logged before the response goes out, so a client that has its answer can rely on the line.
+        self.server.log(
+            "%s %s %d auth=%s"
+            % (self.command, urlsplit(self.path).path, status, "yes" if self.headers.get("Authorization") else "no")
+        )
         self.send_response(status)
         for name, value in headers:
             self.send_header(name, value)
@@ -124,10 +129,6 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(chunk)
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 self.close_connection = True
-        self.server.log(
-            "%s %s %d auth=%s"
-            % (self.command, urlsplit(self.path).path, status, "yes" if self.headers.get("Authorization") else "no")
-        )
 
     def _handle(self, send_body):
         path = urlsplit(self.path).path
