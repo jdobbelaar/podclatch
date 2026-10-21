@@ -1,0 +1,4 @@
+[
+  {"feedId": 12, "ok": true},
+  {"feedId": 7, "ok": false, "error": "Could not fetch the feed (HTTP 503)."}
+]

@@ -1,0 +1,28 @@
+[
+  {
+    "id": 12,
+    "feedUrl": "https://example.com/feeds/history.xml",
+    "title": "Example History Podcast",
+    "author": "Example Media",
+    "description": "Stories from the past.",
+    "artworkUrl": "https://example.com/art/history-600.jpg",
+    "priority": 0,
+    "listenOrder": "NEWEST_FIRST",
+    "lastRefreshedAt": 1760000000000,
+    "subscribedAt": 1750000000000,
+    "rev": 1040
+  },
+  {
+    "id": 7,
+    "feedUrl": "https://example.com/feeds/science.xml",
+    "title": "Example Science Hour",
+    "author": "Example Media",
+    "description": "Weekly science.",
+    "artworkUrl": "https://example.com/art/science-600.jpg",
+    "priority": 1,
+    "listenOrder": "OLDEST_FIRST",
+    "lastRefreshedAt": null,
+    "subscribedAt": 1750000000001,
+    "rev": 1041
+  }
+]

@@ -5,6 +5,7 @@ import com.podclatch.data.db.CacheTransaction
 import com.podclatch.data.db.Episode
 import com.podclatch.data.db.EpisodeStatus
 import com.podclatch.data.db.Feed
+import com.podclatch.data.db.FeedListItem
 import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.db.PendingStateWrite
 import com.podclatch.data.network.EpisodeDto
@@ -12,6 +13,7 @@ import com.podclatch.data.network.EpisodeStateItem
 import com.podclatch.data.network.EpisodeStateResult
 import com.podclatch.data.network.FeedDto
 import com.podclatch.data.network.PodClatchApi
+import com.podclatch.data.network.RefreshResultDto
 import com.podclatch.data.network.ServerTarget
 import com.podclatch.data.network.StateOutcome
 import com.podclatch.data.network.SyncPageDto
@@ -21,6 +23,7 @@ import com.podclatch.data.repo.Settings
 import com.podclatch.data.repo.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -61,8 +64,11 @@ class FakeCacheStore : CacheStore {
     /** Runs before the transaction body, for tests that change state "during" a call. */
     var failNextTransaction: Exception? = null
 
+    private val version = MutableStateFlow(0)
+
     private fun publish() {
         counts.value = feeds.size to episodes.size
+        version.value += 1
     }
 
     override suspend fun <R> transaction(block: suspend CacheTransaction.() -> R): R {
@@ -84,6 +90,15 @@ class FakeCacheStore : CacheStore {
 
     override fun feedCount(): Flow<Int> = counts.map { it.first }
     override fun episodeCount(): Flow<Int> = counts.map { it.second }
+
+    override fun observeFeedList(): Flow<List<FeedListItem>> = version.map {
+        feeds.values.sortedWith(compareBy<Feed> { f -> f.priority }.thenBy { f -> f.id }).map { f ->
+            FeedListItem(
+                f.id, f.title, f.author, f.artworkUrl, f.priority,
+                episodes.values.count { e -> e.feedId == f.id && e.status == EpisodeStatus.NEW },
+            )
+        }
+    }.distinctUntilChanged()
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.values.sortedBy { it.episodeId }
 
     override suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String> =
@@ -188,6 +203,12 @@ class FakeApi : PodClatchApi {
     }
     var pullHandler: suspend (Long, Int) -> SyncPageDto = { since, _ -> SyncPageDto(emptyList(), emptyList(), emptyList(), since, false) }
 
+    val reorderRequests = mutableListOf<List<Long>>()
+    val unsubscribeRequests = mutableListOf<Long>()
+    var reorderHandler: suspend (List<Long>) -> List<FeedDto> = { ids -> ids.mapIndexed { i, id -> feedDto(id, priority = i) } }
+    var unsubscribeHandler: suspend (Long) -> Unit = { }
+    var refreshHandler: suspend () -> List<RefreshResultDto> = { emptyList() }
+
     private val inFlight = AtomicInteger(0)
     val maxInFlight = AtomicInteger(0)
 
@@ -210,6 +231,23 @@ class FakeApi : PodClatchApi {
         calls += "pull"
         pullRequests += since to limit
         pullHandler(since, limit)
+    }
+
+    override suspend fun reorderFeeds(feedIds: List<Long>): List<FeedDto> = tracked {
+        calls += "reorder"
+        reorderRequests += feedIds
+        reorderHandler(feedIds)
+    }
+
+    override suspend fun unsubscribeFeed(feedId: Long) = tracked {
+        calls += "unsubscribe"
+        unsubscribeRequests += feedId
+        unsubscribeHandler(feedId)
+    }
+
+    override suspend fun refreshAllFeeds(): List<RefreshResultDto> = tracked {
+        calls += "refresh"
+        refreshHandler()
     }
 
     override suspend fun pushEpisodeState(items: List<EpisodeStateItem>): List<EpisodeStateResult> = tracked {
