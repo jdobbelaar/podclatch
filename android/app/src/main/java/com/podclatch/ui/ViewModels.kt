@@ -2,24 +2,20 @@ package com.podclatch.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.podclatch.data.db.CacheStore
 import com.podclatch.data.repo.ConnectionRepository
 import com.podclatch.data.repo.ConnectionTestResult
 import com.podclatch.data.repo.SaveResult
 import com.podclatch.data.repo.Settings
 import com.podclatch.data.repo.SettingsRepository
-import com.podclatch.domain.ServerUrlValidator
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.SyncState
 import com.podclatch.domain.SyncTrigger
 import com.podclatch.domain.TokenRejection
-import com.podclatch.domain.UrlResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -44,7 +40,7 @@ data class ConnectionUiState(
     val verified: Pair<String, String>? = null,
     val confirmSwitch: Boolean = false,
     val saving: Boolean = false,
-    /** Opened from the placeholder home, so Cancel and system Back go back there. */
+    /** Opened from the tab menu, so Cancel and system Back go back there. */
     val fromHome: Boolean = false,
 ) {
     val canTest: Boolean get() = url.isNotBlank() && token.isNotBlank() && !testing && !saving
@@ -140,30 +136,10 @@ class ConnectionViewModel @Inject constructor(
     }
 }
 
-data class HomeUiState(
-    val host: String = "",
-    val feeds: Int = 0,
-    val episodes: Int = 0,
-    val revision: Long = 0,
-    val sync: SyncState = SyncState(),
-)
-
+/** The Queue placeholder's Sync line and button (replaced by the Queue itself in US-13). */
 @HiltViewModel
-class HomeViewModel @Inject constructor(
-    private val engine: SyncEngine,
-    settings: SettingsRepository,
-    store: CacheStore,
-    validator: ServerUrlValidator,
-) : ViewModel() {
-    val state: StateFlow<HomeUiState> = combine(
-        settings.settings,
-        store.feedCount(),
-        store.episodeCount(),
-        engine.state,
-    ) { s, feeds, episodes, sync ->
-        val host = (validator.validate(s.serverUrl) as? UrlResult.Valid)?.displayHost ?: s.serverUrl
-        HomeUiState(host, feeds, episodes, s.lastSyncRev, sync)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+class QueueViewModel @Inject constructor(private val engine: SyncEngine) : ViewModel() {
+    val sync: StateFlow<SyncState> = engine.state
 
     fun syncNow() {
         viewModelScope.launch { engine.sync(SyncTrigger.MANUAL) }

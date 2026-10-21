@@ -1,0 +1,31 @@
+package com.podclatch.ui.nav
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.serializer
+
+/** Type-safe routes of the single NavHost. Later stories add destinations (the full player, Settings). */
+@Serializable
+data object Queue
+
+@Serializable
+data object Feeds
+
+@Serializable
+data object Subscribe
+
+@Serializable
+data class FeedDetail(val feedId: Long)
+
+/** The two top-level destinations that show the bottom bar. */
+enum class Tab { QUEUE, FEEDS }
+
+/**
+ * Which tab a destination's route string belongs to; null for the nested destinations (so the bottom
+ * bar is hidden there) and for no route.
+ */
+fun tabForRoute(route: String?): Tab? = when {
+    route == null -> null
+    route == serializer<Queue>().descriptor.serialName -> Tab.QUEUE
+    route == serializer<Feeds>().descriptor.serialName -> Tab.FEEDS
+    else -> null
+}

@@ -125,3 +125,15 @@ data class EpisodeStateResult(
     val positionSec: Int? = null,
     val stateUpdatedAt: Long? = null,
 )
+
+/** Body of `PUT /v1/feeds/order`: every subscribed Feed id exactly once, highest priority first. */
+@Serializable
+data class ReorderRequest(val feedIds: List<Long>)
+
+/** One item of the `POST /v1/refresh` answer; [error] is absent when [ok] is true. */
+@Serializable
+data class RefreshResultDto(
+    val feedId: Long,
+    val ok: Boolean,
+    val error: String? = null,
+)

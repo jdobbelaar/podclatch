@@ -3,6 +3,13 @@ package com.podclatch
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.podclatch.data.network.artworkHttpClient
 import com.podclatch.data.repo.SettingsRepository
 import com.podclatch.di.ApplicationScope
 import com.podclatch.domain.StartedActivityCounter
@@ -14,14 +21,30 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import okio.Path.Companion.toOkioPath
 import javax.inject.Inject
 
 @HiltAndroidApp
-class PodClatchApplication : Application() {
+class PodClatchApplication : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var syncEngine: SyncEngine
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var syncScheduler: SyncScheduler
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
+
+    /**
+     * The one Coil ImageLoader: a memory cache, a disk cache under `cacheDir`, and an OkHttp client that
+     * has no interceptor (so no `Authorization` header). Coil's debug logger is never installed.
+     */
+    override fun newImageLoader(context: PlatformContext): ImageLoader = ImageLoader.Builder(context)
+        .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.15).build() }
+        .diskCache {
+            DiskCache.Builder()
+                .directory(cacheDir.resolve(Config.IMAGE_CACHE_DIR).toOkioPath())
+                .maxSizeBytes(Config.IMAGE_DISK_CACHE_BYTES)
+                .build()
+        }
+        .components { add(OkHttpNetworkFetcherFactory(callFactory = { artworkHttpClient() })) }
+        .build()
 
     override fun onCreate() {
         super.onCreate()

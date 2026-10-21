@@ -76,3 +76,13 @@ data class PendingStateWrite(
     val positionSec: Int,
     val stateUpdatedAt: Long,
 )
+
+/** One bar of the Feeds tab: the visible columns of a Feed plus its live unplayed count. */
+data class FeedListItem(
+    val id: Long,
+    val title: String,
+    val author: String,
+    val artworkUrl: String,
+    val priority: Int,
+    val unplayedCount: Int,
+)

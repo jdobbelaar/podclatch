@@ -2,6 +2,7 @@ package com.podclatch.data.db
 
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,6 +17,9 @@ interface CacheStore {
 
     fun feedCount(): Flow<Int>
     fun episodeCount(): Flow<Int>
+
+    /** Feeds in server order (priority, then id) with their unplayed counts; emits only on a visible change. */
+    fun observeFeedList(): Flow<List<FeedListItem>>
 
     suspend fun pendingWrites(): List<PendingStateWrite>
     suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String>
@@ -66,6 +70,7 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
 
     override fun feedCount(): Flow<Int> = feeds.count()
     override fun episodeCount(): Flow<Int> = episodes.count()
+    override fun observeFeedList(): Flow<List<FeedListItem>> = feeds.observeFeedList().distinctUntilChanged()
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.getAll()
 
     override suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String> =

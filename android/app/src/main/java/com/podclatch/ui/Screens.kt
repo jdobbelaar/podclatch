@@ -45,20 +45,25 @@ import com.podclatch.domain.FailureReason
 import com.podclatch.domain.SyncState
 import com.podclatch.domain.TokenError
 import com.podclatch.domain.UrlError
+import androidx.navigation.compose.rememberNavController
+import com.podclatch.ui.nav.MainNav
 import java.text.DateFormat
 import java.util.Date
 
 /**
  * Chooses between nothing (settings not read yet), the connection screen (not configured, or opened
- * from the placeholder home), and the placeholder home. A plain switch; navigation arrives with US-02.
+ * from a tab's menu), and the app's navigation (the bottom bar and its destinations).
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun AppRoot(main: MainViewModel, connection: ConnectionViewModel, home: HomeViewModel) {
+fun AppRoot(main: MainViewModel, connection: ConnectionViewModel) {
     val settings by main.settings.collectAsState()
     val connectionState by connection.state.collectAsState()
     val rejected by connection.tokenRejected.collectAsState()
     val current = settings
+    // Held here, above the switch below, so opening the connection screen (or a token rejection that
+    // replaces the app) does not throw away the back stack: the same destination is shown afterwards.
+    val navController = rememberNavController()
     Column(
         Modifier
             .fillMaxSize()
@@ -69,7 +74,7 @@ fun AppRoot(main: MainViewModel, connection: ConnectionViewModel, home: HomeView
             current == null -> Unit
             !current.isConfigured || connectionState.fromHome ->
                 ConnectionScreen(connection, connectionState, showRejectedNotice = rejected && !current.isConfigured)
-            else -> HomeScreen(home, onEditConnection = connection::openFromHome)
+            else -> MainNav(navController, onOpenConnection = connection::openFromHome)
         }
     }
 }
@@ -203,36 +208,8 @@ private fun messageText(result: ConnectionTestResult): String = when (result) {
         }
 }
 
-/** The placeholder home; US-02's tabs replace it. */
 @Composable
-fun HomeScreen(vm: HomeViewModel, onEditConnection: () -> Unit) {
-    val state by vm.state.collectAsState()
-    Column(
-        Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            stringResource(R.string.home_connected, state.host),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.testTag("home_connected"),
-        )
-        Text(syncStatusText(state.sync), modifier = Modifier.testTag("sync_status"))
-        Text(stringResource(R.string.feed_count, state.feeds), modifier = Modifier.testTag("feed_count"))
-        Text(stringResource(R.string.episode_count, state.episodes), modifier = Modifier.testTag("episode_count"))
-        Text(stringResource(R.string.sync_rev, state.revision), modifier = Modifier.testTag("sync_rev"))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = vm::syncNow, modifier = Modifier.testTag("sync_now")) {
-                Text(stringResource(R.string.sync_now))
-            }
-            OutlinedButton(onClick = onEditConnection, modifier = Modifier.testTag("edit_connection")) {
-                Text(stringResource(R.string.edit_connection))
-            }
-        }
-    }
-}
-
-@Composable
-private fun syncStatusText(sync: SyncState): String {
+internal fun syncStatusText(sync: SyncState): String {
     val failure: FailureReason? = sync.lastFailure
     val lastSuccess = sync.lastSuccessAt
     return when {

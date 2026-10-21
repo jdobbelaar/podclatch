@@ -79,6 +79,9 @@ object AppModule {
     fun okHttpClient(): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(Config.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(Config.CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        // POST /v1/refresh answers only after the refresh ran (up to 60 s), so the default 10 s read
+        // timeout would cut it short; the whole-call timeout above still bounds every request.
+        .readTimeout(Config.CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
     @Provides @Singleton
