@@ -29,6 +29,7 @@ class FeedsViewModel @Inject constructor(private val controller: FeedsController
     fun cancelUnsubscribe() = controller.cancelUnsubscribe()
     fun confirmUnsubscribe() = controller.confirmUnsubscribe()
     fun dismissMessage() = controller.dismissMessage()
+    fun showMessage(message: FeedsMessage) = controller.showMessage(message)
 }
 
 /** The Feed Detail placeholder: the Feed's title from Room, and whether to pop itself. */

@@ -225,6 +225,9 @@ class FeedsController @Inject constructor(
         local.update { it.copy(busy = false, message = message) }
     }
 
+    /** Shows [message] in the banner (used for the outcome of a subscribe). */
+    fun showMessage(message: FeedsMessage) = local.update { it.copy(message = message) }
+
     fun dismissMessage() = local.update { it.copy(message = null) }
 
     /** A rejected token shows the connection screen instead of a banner. */

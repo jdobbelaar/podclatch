@@ -58,9 +58,19 @@
 
     <!-- Placeholders for later stories -->
     <string name="subscribe_title">Subscribe</string>
-    <string name="subscribe_placeholder">Search and subscribe will appear here.</string>
     <string name="feed_detail_placeholder">Feed Detail will appear here.</string>
     <string name="subscribe_fab_description">Subscribe to a Feed</string>
+
+    <!-- Subscribe -->
+    <string name="subscribe_url_label">Feed address</string>
+    <string name="subscribe_button">Subscribe</string>
+    <string name="subscribe_busy">Subscribing...</string>
+    <string name="subscribe_busy_description">Subscribing</string>
+    <string name="subscribe_error_already">You are already subscribed to this Feed.</string>
+    <string name="subscribe_error_failed">Could not subscribe: %1$s</string>
+    <string name="subscribe_error_no_detail">Could not subscribe: the server could not read that feed.</string>
+    <string name="subscribe_error_unexpected">Could not subscribe: something went wrong. Nothing was changed.</string>
+    <string name="message_subscribed_sync_failed">Subscribed, but the Feeds list could not be updated. %1$s It will update at the next Sync.</string>
 
     <!-- Feeds tab -->
     <string name="feeds_syncing">Syncing...</string>

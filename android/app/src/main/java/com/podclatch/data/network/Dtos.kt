@@ -126,6 +126,12 @@ data class EpisodeStateResult(
     val stateUpdatedAt: Long? = null,
 )
 
+/** Body of `POST /v1/feeds`: exactly one key. Its text is hidden because a feed address can hold a secret. */
+@Serializable
+data class SubscribeRequest(val feedUrl: String) {
+    override fun toString(): String = "SubscribeRequest(feedUrl=***)"
+}
+
 /** Body of `PUT /v1/feeds/order`: every subscribed Feed id exactly once, highest priority first. */
 @Serializable
 data class ReorderRequest(val feedIds: List<Long>)

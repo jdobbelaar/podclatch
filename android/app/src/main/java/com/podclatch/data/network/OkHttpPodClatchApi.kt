@@ -84,6 +84,16 @@ class OkHttpPodClatchApi @Inject constructor(
         execute(resolved, Request.Builder().url(resolved.url("/v1/feeds/$feedId")).delete(), authenticated = true)
     }
 
+    override suspend fun subscribeFeed(feedUrl: String): FeedDto {
+        val resolved = resolve(null)
+        val payload = json.encodeToString(SubscribeRequest.serializer(), SubscribeRequest(feedUrl))
+        val request = Request.Builder()
+            .url(resolved.url("/v1/feeds"))
+            .post(payload.toRequestBody(JSON_MEDIA_TYPE))
+        val body = execute(resolved, request, authenticated = true)
+        return decode(body, FeedDto.serializer())
+    }
+
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> {
         val resolved = resolve(null)
         val request = Request.Builder()

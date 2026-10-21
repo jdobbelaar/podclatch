@@ -1,7 +1,6 @@
 package com.podclatch.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -96,19 +94,6 @@ fun QueuePlaceholderScreen(onOpenConnection: () -> Unit, vm: QueueViewModel = hi
             Button(onClick = vm::syncNow, modifier = Modifier.testTag("sync_now")) {
                 Text(stringResource(R.string.sync_now))
             }
-        }
-    }
-}
-
-/** The Subscribe destination until the Subscribe stories replace it. */
-@Composable
-fun SubscribePlaceholderScreen(onBack: () -> Unit) {
-    Scaffold(
-        topBar = { BackTopBar(stringResource(R.string.subscribe_title), onBack) },
-        contentWindowInsets = WindowInsets(0),
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.subscribe_placeholder), modifier = Modifier.testTag("subscribe_placeholder"))
         }
     }
 }
