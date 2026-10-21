@@ -1,15 +1,21 @@
 package com.podclatch.data.db
 
 import androidx.room.Database
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 
-/** Placeholder entity so Room and schema export are wired; a later story replaces it with Feed and Episode. */
-@Entity(tableName = "placeholder")
-data class PlaceholderEntity(
-    @PrimaryKey val id: Long = 0,
+/*
+ * Version 1 is kept: the US-01 placeholder database never shipped. Later stories bump the version and
+ * add a Migration. Never use fallbackToDestructiveMigration: it would destroy the outbox.
+ */
+@Database(
+    entities = [Feed::class, Episode::class, PendingStateWrite::class],
+    version = 1,
+    exportSchema = true,
 )
-
-@Database(entities = [PlaceholderEntity::class], version = 1, exportSchema = true)
-abstract class PodClatchDatabase : RoomDatabase()
+@TypeConverters(Converters::class)
+abstract class PodClatchDatabase : RoomDatabase() {
+    abstract fun feedDao(): FeedDao
+    abstract fun episodeDao(): EpisodeDao
+    abstract fun pendingStateWriteDao(): PendingStateWriteDao
+}

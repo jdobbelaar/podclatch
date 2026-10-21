@@ -1,0 +1,5 @@
+[
+  {"episodeId": 501, "outcome": "APPLIED", "status": "PLAYED", "playedAt": 1760000000000, "positionSec": 1800, "stateUpdatedAt": 1760000000000},
+  {"episodeId": 502, "outcome": "STALE", "status": "PLAYED", "playedAt": 1755000000000, "positionSec": 2400, "stateUpdatedAt": 1755000000000},
+  {"episodeId": 999999, "outcome": "UNKNOWN_EPISODE"}
+]

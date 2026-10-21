@@ -1,0 +1,5 @@
+[
+  {"episodeId": 501, "status": "PLAYED", "playedAt": 1760000000000, "positionSec": 1800, "stateUpdatedAt": 1760000000000},
+  {"episodeId": 502, "status": "NEW", "playedAt": null, "positionSec": 120, "stateUpdatedAt": 1750000000000},
+  {"episodeId": 999999, "status": "NEW", "playedAt": null, "positionSec": 0, "stateUpdatedAt": 1760000000000}
+]

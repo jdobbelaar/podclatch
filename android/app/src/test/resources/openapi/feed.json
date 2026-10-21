@@ -1,0 +1,13 @@
+{
+  "id": 12,
+  "feedUrl": "https://example.com/feeds/history.xml",
+  "title": "Example History Podcast",
+  "author": "Example Media",
+  "description": "Stories from the past.",
+  "artworkUrl": "https://example.com/art/history-600.jpg",
+  "priority": 0,
+  "listenOrder": "NEWEST_FIRST",
+  "lastRefreshedAt": 1760000000000,
+  "subscribedAt": 1750000000000,
+  "rev": 1040
+}
