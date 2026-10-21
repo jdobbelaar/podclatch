@@ -16,11 +16,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
+import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import com.podclatch.R
 import com.podclatch.ui.FeedDetailPlaceholderScreen
 import com.podclatch.ui.QueuePlaceholderScreen
@@ -33,8 +33,7 @@ import com.podclatch.ui.feeds.FeedsScreen
  * NavController's standard saved state.
  */
 @Composable
-fun MainNav(onOpenConnection: () -> Unit) {
-    val navController = rememberNavController()
+fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
     val entry by navController.currentBackStackEntryAsState()
     val selected = tabForRoute(entry?.destination?.route)
     Scaffold(

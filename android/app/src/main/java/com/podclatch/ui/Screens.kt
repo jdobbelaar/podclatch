@@ -45,6 +45,7 @@ import com.podclatch.domain.FailureReason
 import com.podclatch.domain.SyncState
 import com.podclatch.domain.TokenError
 import com.podclatch.domain.UrlError
+import androidx.navigation.compose.rememberNavController
 import com.podclatch.ui.nav.MainNav
 import java.text.DateFormat
 import java.util.Date
@@ -60,6 +61,9 @@ fun AppRoot(main: MainViewModel, connection: ConnectionViewModel) {
     val connectionState by connection.state.collectAsState()
     val rejected by connection.tokenRejected.collectAsState()
     val current = settings
+    // Held here, above the switch below, so opening the connection screen (or a token rejection that
+    // replaces the app) does not throw away the back stack: the same destination is shown afterwards.
+    val navController = rememberNavController()
     Column(
         Modifier
             .fillMaxSize()
@@ -70,7 +74,7 @@ fun AppRoot(main: MainViewModel, connection: ConnectionViewModel) {
             current == null -> Unit
             !current.isConfigured || connectionState.fromHome ->
                 ConnectionScreen(connection, connectionState, showRejectedNotice = rejected && !current.isConfigured)
-            else -> MainNav(onOpenConnection = connection::openFromHome)
+            else -> MainNav(navController, onOpenConnection = connection::openFromHome)
         }
     }
 }
