@@ -18,6 +18,9 @@ interface CacheStore {
     fun feedCount(): Flow<Int>
     fun episodeCount(): Flow<Int>
 
+    /** The address of every cached Feed (order not defined); emits again whenever a Feed is added or removed. */
+    fun feedUrls(): Flow<List<String>>
+
     /** Feeds in server order (priority, then id) with their unplayed counts; emits only on a visible change. */
     fun observeFeedList(): Flow<List<FeedListItem>>
 
@@ -70,6 +73,7 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
 
     override fun feedCount(): Flow<Int> = feeds.count()
     override fun episodeCount(): Flow<Int> = episodes.count()
+    override fun feedUrls(): Flow<List<String>> = feeds.feedUrls()
     override fun observeFeedList(): Flow<List<FeedListItem>> = feeds.observeFeedList().distinctUntilChanged()
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.getAll()
 

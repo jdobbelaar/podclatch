@@ -94,6 +94,13 @@ class OkHttpPodClatchApi @Inject constructor(
         return decode(body, FeedDto.serializer())
     }
 
+    override suspend fun searchPodcasts(q: String): List<SearchResultDto> {
+        val resolved = resolve(null)
+        val url = resolved.url("/v1/search").newBuilder().addQueryParameter("q", q).build()
+        val body = execute(resolved, Request.Builder().url(url), authenticated = true)
+        return decode(body, ListSerializer(SearchResultDto.serializer()))
+    }
+
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> {
         val resolved = resolve(null)
         val request = Request.Builder()

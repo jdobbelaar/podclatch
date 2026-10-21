@@ -28,6 +28,12 @@ interface PodClatchApi {
      */
     suspend fun subscribeFeed(feedUrl: String): FeedDto
 
+    /**
+     * `GET /v1/search?q=<q>`: at most 25 results in the server's order. [q] is sent as given (the caller
+     * trims it); it is never logged.
+     */
+    suspend fun searchPodcasts(q: String): List<SearchResultDto>
+
     /** `POST /v1/refresh`: no request body; one result per Feed in Feed Priority order. */
     suspend fun refreshAllFeeds(): List<RefreshResultDto>
 }

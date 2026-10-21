@@ -395,5 +395,8 @@ private class ScriptedApi : PodClatchApi {
 
     override suspend fun subscribeFeed(feedUrl: String): FeedDto = throw UnsupportedOperationException()
 
+    override suspend fun searchPodcasts(q: String): List<com.podclatch.data.network.SearchResultDto> =
+        throw UnsupportedOperationException()
+
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> = emptyList()
 }

@@ -14,6 +14,7 @@ import com.podclatch.data.network.EpisodeStateResult
 import com.podclatch.data.network.FeedDto
 import com.podclatch.data.network.PodClatchApi
 import com.podclatch.data.network.RefreshResultDto
+import com.podclatch.data.network.SearchResultDto
 import com.podclatch.data.network.ServerTarget
 import com.podclatch.data.network.StateOutcome
 import com.podclatch.data.network.SyncPageDto
@@ -90,6 +91,7 @@ class FakeCacheStore : CacheStore {
 
     override fun feedCount(): Flow<Int> = counts.map { it.first }
     override fun episodeCount(): Flow<Int> = counts.map { it.second }
+    override fun feedUrls(): Flow<List<String>> = version.map { feeds.values.map { f -> f.feedUrl } }.distinctUntilChanged()
 
     override fun observeFeedList(): Flow<List<FeedListItem>> = version.map {
         feeds.values.sortedWith(compareBy<Feed> { f -> f.priority }.thenBy { f -> f.id }).map { f ->
@@ -209,6 +211,8 @@ class FakeApi : PodClatchApi {
     var unsubscribeHandler: suspend (Long) -> Unit = { }
     val subscribeRequests = mutableListOf<String>()
     var subscribeHandler: suspend (String) -> FeedDto = { feedDto(100, title = "New Feed") }
+    val searchRequests = mutableListOf<String>()
+    var searchHandler: suspend (String) -> List<SearchResultDto> = { emptyList() }
     var refreshHandler:suspend () -> List<RefreshResultDto> = { emptyList() }
 
     private val inFlight = AtomicInteger(0)
@@ -251,6 +255,12 @@ class FakeApi : PodClatchApi {
         calls += "subscribe"
         subscribeRequests += feedUrl
         subscribeHandler(feedUrl)
+    }
+
+    override suspend fun searchPodcasts(q: String): List<SearchResultDto> = tracked {
+        calls += "search"
+        searchRequests += q
+        searchHandler(q)
     }
 
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> = tracked {

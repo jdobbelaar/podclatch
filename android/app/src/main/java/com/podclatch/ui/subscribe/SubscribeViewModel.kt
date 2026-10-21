@@ -26,6 +26,8 @@ class SubscribeViewModel @Inject constructor(
 
     fun onTextChange(text: String) = controller.onTextChange(text)
     fun subscribe() = controller.subscribe()
+    fun subscribeTo(address: String) = controller.subscribeTo(address)
+    fun clearMessage() = controller.clearMessage()
     fun clear() = controller.clear()
     fun consumeOutcome() = controller.consumeOutcome()
 }

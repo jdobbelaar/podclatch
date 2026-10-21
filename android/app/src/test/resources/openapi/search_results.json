@@ -1,0 +1,8 @@
+[
+  {
+    "feedUrl": "https://example.com/feeds/history.xml",
+    "title": "Example History Podcast",
+    "author": "Example Media",
+    "artworkUrl": "https://example.com/art/history-600.jpg"
+  }
+]

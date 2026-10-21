@@ -1,7 +1,18 @@
 package com.podclatch.ui.subscribe
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.platform.LocalFocusManager
+import com.podclatch.ui.subscribe.search.SearchField
+import com.podclatch.ui.subscribe.search.SearchPreview
+import com.podclatch.ui.subscribe.search.SearchViewModel
+import com.podclatch.ui.subscribe.search.isSubscribed
+import com.podclatch.ui.subscribe.search.searchContent
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,8 +64,11 @@ fun SubscribeScreen(
     onBack: () -> Unit,
     onSubscribed: (SubscribeOutcome) -> Unit,
     vm: SubscribeViewModel = hiltViewModel(),
+    searchVm: SearchViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val search by searchVm.state.collectAsStateWithLifecycle()
+    val subscribedAddresses by searchVm.subscribed.collectAsStateWithLifecycle()
     val outcome = state.outcome
     LaunchedEffect(outcome) {
         if (outcome != null) {
@@ -62,21 +76,70 @@ fun SubscribeScreen(
             onSubscribed(outcome)
         }
     }
+    val selected = search.selected
+    // System Back closes the preview first; a further Back leaves the Subscribe view.
+    BackHandler(enabled = selected != null) {
+        searchVm.closePreview()
+        vm.clearMessage()
+    }
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val listState = rememberLazyListState()
     Scaffold(
         topBar = { BackTopBar(stringResource(R.string.subscribe_title), onBack) },
         contentWindowInsets = WindowInsets(0),
         modifier = Modifier.testTag("subscribe_screen"),
     ) { padding ->
-        Column(
-            Modifier.padding(padding).fillMaxSize().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            SubscribeByUrlSection(
-                state = state,
-                onTextChange = vm::onTextChange,
-                onSubscribe = { vm.subscribe() },
-                onClear = vm::clear,
-            )
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            // One LazyColumn for the whole screen: the address section, the search field, and the results.
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    SubscribeByUrlSection(
+                        state = state,
+                        onTextChange = vm::onTextChange,
+                        onSubscribe = { vm.subscribe() },
+                        onClear = vm::clear,
+                        showStatus = selected == null,
+                    )
+                }
+                item {
+                    SearchField(
+                        query = search.query,
+                        onQueryChange = searchVm::onQueryChange,
+                        onSearch = {
+                            keyboard?.hide()
+                            searchVm.searchNow()
+                        },
+                        onClear = searchVm::clear,
+                    )
+                }
+                searchContent(
+                    content = search.content,
+                    onOpen = { result ->
+                        focus.clearFocus()
+                        vm.clearMessage()
+                        searchVm.open(result)
+                    },
+                    onRetry = searchVm::searchNow,
+                )
+            }
+            if (selected != null) {
+                SearchPreview(
+                    result = selected,
+                    subscribed = isSubscribed(selected.feedUrl, subscribedAddresses),
+                    subscribeState = state,
+                    onSubscribe = { vm.subscribeTo(selected.feedUrl) },
+                    onClose = {
+                        searchVm.closePreview()
+                        vm.clearMessage()
+                    },
+                )
+            }
         }
     }
 }
@@ -88,6 +151,8 @@ fun SubscribeByUrlSection(
     onTextChange: (String) -> Unit,
     onSubscribe: () -> Unit,
     onClear: () -> Unit,
+    /** False while the search preview is open: it shows the busy indicator and message itself. */
+    showStatus: Boolean = true,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val submit = {
@@ -143,6 +208,17 @@ fun SubscribeByUrlSection(
         ) {
             Text(stringResource(R.string.subscribe_button))
         }
+        if (showStatus) SubscribeStatus(state)
+    }
+}
+
+/**
+ * The busy indicator and the server message of a subscribe. Shown under the address field, or in the
+ * search preview while it is open (never both, so each tag appears once).
+ */
+@Composable
+fun SubscribeStatus(state: SubscribeUiState) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (state.busy) {
             val busyDescription = stringResource(R.string.subscribe_busy_description)
             Row(

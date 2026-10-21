@@ -74,6 +74,18 @@
     <string name="subscribe_error_failed">Could not subscribe: %1$s</string>
     <string name="subscribe_error_no_detail">Could not subscribe: the server could not read that feed.</string>
     <string name="subscribe_error_unexpected">Could not subscribe: something went wrong. Nothing was changed.</string>
+    <!-- Search -->
+    <string name="search_field_label">Search podcasts</string>
+    <string name="search_clear_description">Clear search</string>
+    <string name="search_hint">Search for a podcast by name.</string>
+    <string name="search_too_long">Search terms can be at most 200 characters.</string>
+    <string name="search_loading_description">Searching</string>
+    <string name="search_empty">No podcasts found.</string>
+    <string name="search_error">Could not search: %1$s</string>
+    <string name="search_retry">Try again</string>
+    <string name="search_preview_close">Close preview</string>
+    <string name="search_preview_subscribed">Subscribed</string>
+    <string name="search_artwork_description">Artwork for %1$s</string>
     <string name="message_subscribed_sync_failed">Subscribed, but the Feeds list could not be updated. %1$s It will update at the next Sync.</string>
 
     <!-- Feeds tab -->

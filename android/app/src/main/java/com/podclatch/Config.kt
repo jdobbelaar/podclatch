@@ -40,6 +40,12 @@ object Config {
     /** Longest per-Feed refresh error shown. */
     const val MAX_REFRESH_ERROR_LENGTH = 200
 
+    /** A search request is sent this long after the last change to the search term. */
+    const val SEARCH_DEBOUNCE_MS = 400L
+
+    /** The server rejects a search term longer than this many characters (after trimming) with 422. */
+    const val SEARCH_MAX_TERM_LENGTH = 200
+
     /** Size of Coil's disk cache for artwork. */
     const val IMAGE_DISK_CACHE_BYTES = 50L * 1024 * 1024
 
