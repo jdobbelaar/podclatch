@@ -97,6 +97,7 @@ class FeedListInstrumentedTest {
         flow.awaitCount(1, 2)
         repo.markNew(1)
         flow.awaitCount(1, 3)
+        Unit
     }
 
     @Test
@@ -108,6 +109,7 @@ class FeedListInstrumentedTest {
         flow.awaitCount(1, 2)
         store.transaction { deleteFeed(2) }
         withTimeout(5_000) { flow.first { list -> list.map { it.id } == listOf(1L) } }
+        Unit
     }
 
     @Test
