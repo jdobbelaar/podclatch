@@ -18,6 +18,7 @@ import com.podclatch.data.network.EpisodeStateItem
 import com.podclatch.data.network.EpisodeStateResult
 import com.podclatch.data.network.FeedDto
 import com.podclatch.data.network.PodClatchApi
+import com.podclatch.data.network.RefreshResultDto
 import com.podclatch.data.network.ServerTarget
 import com.podclatch.data.network.StateOutcome
 import com.podclatch.data.network.SyncPageDto
@@ -387,4 +388,10 @@ private class ScriptedApi : PodClatchApi {
     }
 
     override suspend fun pushEpisodeState(items: List<EpisodeStateItem>) = push(items)
+
+    override suspend fun reorderFeeds(feedIds: List<Long>): List<FeedDto> = emptyList()
+
+    override suspend fun unsubscribeFeed(feedId: Long) = Unit
+
+    override suspend fun refreshAllFeeds(): List<RefreshResultDto> = emptyList()
 }
