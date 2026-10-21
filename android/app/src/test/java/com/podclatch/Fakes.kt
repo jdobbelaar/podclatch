@@ -8,6 +8,7 @@ import com.podclatch.data.db.Feed
 import com.podclatch.data.db.FeedListItem
 import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.db.PendingStateWrite
+import com.podclatch.data.db.PlaybackEpisode
 import com.podclatch.data.network.EpisodeDto
 import com.podclatch.data.network.EpisodeStateItem
 import com.podclatch.data.network.EpisodeStateResult
@@ -49,6 +50,10 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
 
     override suspend fun setSyncIntervalHours(hours: Int) {
         flow.value = flow.value.copy(syncIntervalHours = hours)
+    }
+
+    override suspend fun setSkipIntervals(backSec: Int, forwardSec: Int) {
+        flow.value = flow.value.copy(skipBackSec = backSec, skipForwardSec = forwardSec)
     }
 }
 
@@ -110,6 +115,14 @@ class FakeCacheStore : CacheStore {
         episodes.values.filter { it.feedId in feedIds }.mapNotNull { it.localPath }
 
     override suspend fun allLocalPaths(): List<String> = episodes.values.mapNotNull { it.localPath }
+
+    override suspend fun episodeForPlayback(id: Long): PlaybackEpisode? {
+        val e = episodes[id] ?: return null
+        val f = feeds[e.feedId] ?: return null
+        return PlaybackEpisode(
+            e.id, e.title, f.title, e.audioUrl, e.durationSec, e.artworkUrl, f.artworkUrl, e.downloadState, e.localPath,
+        )
+    }
 
     private inner class Tx : CacheTransaction {
         override suspend fun feedExists(id: Long) = id in feeds

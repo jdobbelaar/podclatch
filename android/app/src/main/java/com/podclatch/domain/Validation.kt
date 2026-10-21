@@ -16,7 +16,9 @@ sealed interface UrlResult {
 /**
  * The one server URL rule, shared by the connection screen and everything that saves the URL.
  * [isDebuggable] decides the cleartext policy (injected so both modes are testable): a release build
- * accepts `http://` only for loopback and the emulator host.
+ * accepts `http://` only for loopback and the emulator host. This is the app's rule, not the OS's: the
+ * network security config permits cleartext for every build (podcast audio is often plain `http://`),
+ * so the token is protected here and by the token guard interceptor (`TokenGuard.kt`).
  */
 class ServerUrlValidator(private val isDebuggable: Boolean) {
 

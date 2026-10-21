@@ -13,6 +13,7 @@ import com.podclatch.data.db.PodClatchDatabase
 import com.podclatch.data.db.RoomCacheStore
 import com.podclatch.data.network.OkHttpPodClatchApi
 import com.podclatch.data.network.PodClatchApi
+import com.podclatch.data.network.TokenGuardInterceptor
 import com.podclatch.data.repo.ConnectionRepository
 import com.podclatch.data.repo.DataStoreSettingsRepository
 import com.podclatch.data.repo.SettingsRepository
@@ -76,12 +77,13 @@ object AppModule {
     fun json(): Json = Json { ignoreUnknownKeys = true }
 
     @Provides @Singleton
-    fun okHttpClient(): OkHttpClient = OkHttpClient.Builder()
+    fun okHttpClient(@ApplicationContext context: Context): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(Config.CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .callTimeout(Config.CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         // POST /v1/refresh answers only after the refresh ran (up to 60 s), so the default 10 s read
         // timeout would cut it short; the whole-call timeout above still bounds every request.
         .readTimeout(Config.CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .addNetworkInterceptor(TokenGuardInterceptor(context.isDebuggable()))
         .build()
 
     @Provides @Singleton
@@ -94,7 +96,7 @@ object AppModule {
 
     @Provides @Singleton
     fun urlValidator(@ApplicationContext context: Context): ServerUrlValidator =
-        ServerUrlValidator(isDebuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
+        ServerUrlValidator(isDebuggable = context.isDebuggable())
 
     @Provides @Singleton
     fun workManager(@ApplicationContext context: Context): WorkManager = WorkManager.getInstance(context)
@@ -125,5 +127,7 @@ object AppModule {
     ): ConnectionRepository =
         ConnectionRepository(api, settings, store, engine, tokenRejection, fileDeleter, validator, io, scope)
 }
+
+private fun Context.isDebuggable() = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
 private fun Context.settingsFile() = java.io.File(filesDir, "datastore/podclatch_settings.preferences_pb")

@@ -77,6 +77,24 @@ data class PendingStateWrite(
     val stateUpdatedAt: Long,
 )
 
+/**
+ * What playback needs to know about one Episode, joined with its Feed. [toString] leaves out every
+ * address: an Episode's own `toString` would print `audioUrl`.
+ */
+data class PlaybackEpisode(
+    val id: Long,
+    val title: String,
+    val feedTitle: String,
+    val audioUrl: String,
+    val durationSec: Int?,
+    val artworkUrl: String?,
+    val feedArtworkUrl: String,
+    val downloadState: DownloadState,
+    val localPath: String?,
+) {
+    override fun toString() = "PlaybackEpisode(id=$id, downloadState=$downloadState)"
+}
+
 /** One bar of the Feeds tab: the visible columns of a Feed plus its live unplayed count. */
 data class FeedListItem(
     val id: Long,

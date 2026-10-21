@@ -132,6 +132,8 @@ class OkHttpPodClatchApi @Inject constructor(
         val call = resolved.client.newCall(builder.build())
         val (code, text) = try {
             call.await()
+        } catch (e: CleartextRefusedException) {
+            throw ApiException(ApiError.CleartextRefused)
         } catch (e: InterruptedIOException) {
             throw ApiException(ApiError.Unreachable(timeout = true))
         } catch (e: IOException) {

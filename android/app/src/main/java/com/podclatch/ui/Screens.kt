@@ -198,6 +198,7 @@ private fun messageText(result: ConnectionTestResult): String = when (result) {
     )
     ConnectionTestResult.Unreachable -> stringResource(R.string.result_unreachable)
     ConnectionTestResult.Timeout -> stringResource(R.string.result_timeout)
+    ConnectionTestResult.CleartextRefused -> stringResource(R.string.result_cleartext_refused)
     ConnectionTestResult.TokenRejected -> stringResource(R.string.result_token_rejected)
     ConnectionTestResult.NotPodClatch -> stringResource(R.string.result_not_podclatch)
     is ConnectionTestResult.HttpError ->

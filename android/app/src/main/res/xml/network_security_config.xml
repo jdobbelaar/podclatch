@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Release policy: plain HTTP only to loopback and the emulator host; every other host needs HTTPS.
-    The debug build overrides this file (src/debug) to allow cleartext to any host.
-    ServerUrlValidator enforces the same rule on the typed address.
+    Cleartext is permitted for every build: podcast audio is often plain http:// on arbitrary publisher
+    hosts, and the OS cannot tell audio from the PodClatch Server. The bearer-token rule (HTTPS, except
+    localhost, 127.0.0.1, and 10.0.2.2) is enforced in app code instead: ServerUrlValidator rejects such a
+    server address, and the token guard interceptor (TokenGuard.kt) refuses to send the token over plain
+    HTTP to any other host. Debug and release share this file and differ only through isDebuggable there.
 -->
-<network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">10.0.2.2</domain>
-    </domain-config>
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <!-- The token is guarded in app code (see above); audio needs plain HTTP to arbitrary hosts. -->
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
 </network-security-config>
