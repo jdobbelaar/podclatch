@@ -10,6 +10,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -44,6 +46,7 @@ import javax.inject.Inject
  * It reads Room and DataStore only through [EpisodeMediaResolver] and [SettingsRepository]; it never calls
  * the PodClatch API. The browse tree is not built here (that is the Android Auto story).
  */
+@OptIn(markerClass = [UnstableApi::class])
 @AndroidEntryPoint
 class PlaybackService : MediaLibraryService() {
     @Inject lateinit var resolver: EpisodeMediaResolver
@@ -193,6 +196,7 @@ class PlaybackService : MediaLibraryService() {
     }
 }
 
+@OptIn(markerClass = [UnstableApi::class])
 /** The player's item for a resolved Episode: playable, with title, Feed title, artwork, and duration. */
 internal fun mediaItemOf(resolved: ResolvedEpisode): MediaItem {
     val uri: Uri = when (val source = resolved.source) {

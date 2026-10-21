@@ -2,12 +2,15 @@ package com.podclatch.playback
 
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 
 /**
  * Wraps the ExoPlayer so that the skip amounts follow the Settings live (ExoPlayer's increments are
  * fixed when it is built), and so that the lock screen, headset, and notification show no next or
  * previous (there is no Queue yet).
  */
+@OptIn(markerClass = [UnstableApi::class])
 class SkipForwardingPlayer(
     player: Player,
     private val skipBackMs: () -> Long,
