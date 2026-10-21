@@ -68,6 +68,31 @@ class OkHttpPodClatchApi @Inject constructor(
         return decode(body, ListSerializer(EpisodeStateResult.serializer()))
     }
 
+    override suspend fun reorderFeeds(feedIds: List<Long>): List<FeedDto> {
+        val resolved = resolve(null)
+        val payload = json.encodeToString(ReorderRequest.serializer(), ReorderRequest(feedIds))
+        val request = Request.Builder()
+            .url(resolved.url("/v1/feeds/order"))
+            .put(payload.toRequestBody(JSON_MEDIA_TYPE))
+        val body = execute(resolved, request, authenticated = true)
+        return decode(body, ListSerializer(FeedDto.serializer()))
+    }
+
+    override suspend fun unsubscribeFeed(feedId: Long) {
+        val resolved = resolve(null)
+        // The 204 has no body, so the answer is not decoded.
+        execute(resolved, Request.Builder().url(resolved.url("/v1/feeds/$feedId")).delete(), authenticated = true)
+    }
+
+    override suspend fun refreshAllFeeds(): List<RefreshResultDto> {
+        val resolved = resolve(null)
+        val request = Request.Builder()
+            .url(resolved.url("/v1/refresh"))
+            .post("".toRequestBody(null))
+        val body = execute(resolved, request, authenticated = true)
+        return decode(body, ListSerializer(RefreshResultDto.serializer()))
+    }
+
     private class Resolved(val baseUrl: String, val token: String, val client: OkHttpClient) {
         fun url(path: String) = (baseUrl + path).toHttpUrlOrNull()
             ?: throw ApiException(ApiError.Unreachable(timeout = false))

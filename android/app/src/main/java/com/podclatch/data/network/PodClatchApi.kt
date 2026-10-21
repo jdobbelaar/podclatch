@@ -15,6 +15,15 @@ interface PodClatchApi {
 
     /** `POST /v1/episodes/state`: a bare JSON array in, a bare JSON array out. */
     suspend fun pushEpisodeState(items: List<EpisodeStateItem>): List<EpisodeStateResult>
+
+    /** `PUT /v1/feeds/order`: the full list of Feed ids in the new order; answers the Feeds in that order. */
+    suspend fun reorderFeeds(feedIds: List<Long>): List<FeedDto>
+
+    /** `DELETE /v1/feeds/{id}`: 204 with no body on success. */
+    suspend fun unsubscribeFeed(feedId: Long)
+
+    /** `POST /v1/refresh`: no request body; one result per Feed in Feed Priority order. */
+    suspend fun refreshAllFeeds(): List<RefreshResultDto>
 }
 
 /**

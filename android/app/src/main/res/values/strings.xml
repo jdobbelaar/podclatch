@@ -41,15 +41,56 @@
     <string name="switch_server_message">This is a different server. The local cache and downloads will be cleared.</string>
     <string name="switch_server_confirm">Switch server</string>
 
-    <!-- Placeholder home (replaced by the Feeds and Queue tabs) -->
-    <string name="home_connected">Connected to %1$s</string>
+    <!-- Navigation -->
+    <string name="tab_queue">Queue</string>
+    <string name="tab_feeds">Feeds</string>
+    <string name="more_options">More options</string>
+    <string name="menu_connection_settings">Connection settings</string>
+    <string name="back">Back</string>
+
+    <!-- Queue placeholder -->
+    <string name="queue_placeholder">Your Queue will appear here.</string>
     <string name="sync_running">Syncing...</string>
     <string name="sync_last">Last synced %1$s</string>
     <string name="sync_never">Not synced yet</string>
     <string name="sync_failed">Sync failed: %1$s</string>
-    <string name="feed_count">Feeds: %1$d</string>
-    <string name="episode_count">Episodes: %1$d</string>
-    <string name="sync_rev">Revision: %1$d</string>
     <string name="sync_now">Sync now</string>
-    <string name="edit_connection">Connection settings</string>
+
+    <!-- Placeholders for later stories -->
+    <string name="subscribe_title">Subscribe</string>
+    <string name="subscribe_placeholder">Search and subscribe will appear here.</string>
+    <string name="feed_detail_placeholder">Feed Detail will appear here.</string>
+    <string name="subscribe_fab_description">Subscribe to a Feed</string>
+
+    <!-- Feeds tab -->
+    <string name="feeds_syncing">Syncing...</string>
+    <string name="feeds_empty">No Feeds yet. Tap + to subscribe to one.</string>
+    <string name="feed_untitled">Untitled Feed</string>
+    <string name="feed_row_description">%1$s, %2$s, %3$d unplayed</string>
+    <string name="feed_row_description_no_author">%1$s, %2$d unplayed</string>
+    <string name="feed_artwork_description">Artwork for %1$s</string>
+    <string name="feed_reorder_description">Reorder %1$s</string>
+    <string name="refresh_pulling">Pull down to refresh, %1$d percent</string>
+    <string name="refresh_release">Release to refresh</string>
+    <string name="refresh_refreshing">Refreshing</string>
+
+    <!-- Unsubscribe -->
+    <string name="unsubscribe_title">Unsubscribe from %1$s?</string>
+    <string name="unsubscribe_message">The Feed and its Episodes will be removed from the server and from this device, including downloaded audio. This cannot be undone.</string>
+    <string name="unsubscribe_confirm">Unsubscribe</string>
+    <string name="unsubscribe_swipe_label">Unsubscribe</string>
+
+    <!-- Messages -->
+    <string name="message_dismiss">Dismiss</string>
+    <string name="message_move_failed">Could not move the Feed: %1$s</string>
+    <string name="message_list_changed">The list changed while you were moving a Feed. Nothing was moved.</string>
+    <string name="message_unsubscribe_failed">Could not unsubscribe from %1$s: %2$s</string>
+    <string name="message_unsubscribed_sync_failed">Unsubscribed from %1$s, but syncing failed: %2$s. The Feed will disappear after the next Sync.</string>
+    <string name="message_refresh_partial">Could not refresh %1$d of %2$d Feeds.</string>
+    <string name="message_refresh_line">%1$s: %2$s</string>
+    <string name="message_refresh_a_feed">A Feed</string>
+    <string name="message_refresh_more">and %1$d more.</string>
+    <string name="message_refresh_failed">Could not refresh: %1$s</string>
+    <string name="message_refresh_sync_failed">Refreshed, but syncing failed: %1$s</string>
+    <string name="message_unexpected">Something went wrong. Nothing was changed.</string>
 </resources>

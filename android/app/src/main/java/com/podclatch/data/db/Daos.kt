@@ -45,6 +45,15 @@ interface FeedDao {
     @Query("SELECT COUNT(*) FROM feed")
     fun count(): Flow<Int>
 
+    /** The Feeds tab: per Feed the count of NEW Episodes (downloaded or not), in server order. */
+    @Query(
+        "SELECT f.id AS id, f.title AS title, f.author AS author, f.artworkUrl AS artworkUrl, " +
+            "f.priority AS priority, " +
+            "(SELECT COUNT(*) FROM episode e WHERE e.feedId = f.id AND e.status = 'NEW') AS unplayedCount " +
+            "FROM feed f ORDER BY f.priority ASC, f.id ASC",
+    )
+    fun observeFeedList(): Flow<List<FeedListItem>>
+
     @Query("DELETE FROM feed")
     suspend fun deleteAll()
 }
