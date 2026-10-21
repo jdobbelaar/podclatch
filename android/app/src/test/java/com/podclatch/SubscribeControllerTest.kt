@@ -14,25 +14,19 @@ import com.podclatch.ui.feeds.subscribeOutcomeMessage
 import com.podclatch.ui.subscribe.SubscribeController
 import com.podclatch.ui.subscribe.SubscribeMessage
 import com.podclatch.ui.subscribe.SubscribeOutcome
-import com.podclatch.ui.subscribe.SubscribeUiState
 import com.podclatch.ui.subscribe.addressToSend
 import com.podclatch.ui.subscribe.toMessage
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
 
 class SubscribeControllerTest {
@@ -48,19 +42,6 @@ class SubscribeControllerTest {
     fun tearDown() {
         scope.cancel()
     }
-
-    private fun await(condition: (SubscribeUiState) -> Boolean): SubscribeUiState = awaitState(controller, condition)
-
-    /** Waits for [condition] on [c]'s state and fails fast, with a clear message, instead of hanging. */
-    private fun awaitState(c: SubscribeController, condition: (SubscribeUiState) -> Boolean): SubscribeUiState =
-        runBlocking {
-            try {
-                withTimeout(5_000) { c.uiState.first(condition) }
-            } catch (e: TimeoutCancellationException) {
-                fail("The expected state was not reached within 5 s; the last state was ${c.uiState.value.copy(text = "<hidden>")}")
-                throw e
-            }
-        }
 
     // ---- The mapping from result to message ----
 
@@ -106,7 +87,7 @@ class SubscribeControllerTest {
         assertEquals("HTTP://Host/a b.xml", addressToSend("  \tHTTP://Host/a b.xml \n"))
         controller.onTextChange("  http://feedhost:8080/feeds/alpha.xml  ")
         assertTrue(controller.subscribe())
-        await { it.outcome != null }
+        controller.await("the outcome") { it.outcome != null }
         assertEquals(listOf("http://feedhost:8080/feeds/alpha.xml"), api.subscribeRequests)
     }
 
@@ -117,7 +98,7 @@ class SubscribeControllerTest {
         assertFalse(controller.uiState.value.canSubscribe)
         assertFalse(controller.subscribe())
         controller.onTextChange(" x ")
-        assertTrue(await { it.text == " x " }.canSubscribe)
+        assertTrue(controller.await("the text ' x '") { it.text == " x " }.canSubscribe)
         assertTrue(api.subscribeRequests.isEmpty())
     }
 
@@ -127,11 +108,11 @@ class SubscribeControllerTest {
         api.subscribeHandler = { feedDto(9, title = "Nine") }
         controller.onTextChange("http://h/x.xml")
         controller.subscribe()
-        val state = await { it.outcome != null }
+        val state = controller.await("the outcome and not busy") { it.outcome != null && !it.busy }
         assertEquals(SubscribeOutcome(9, "Nine", "Cannot reach the server."), state.outcome)
         assertFalse(state.busy)
         controller.consumeOutcome()
-        assertNull(await { it.outcome == null }.outcome)
+        assertNull(controller.await("the outcome consumed") { it.outcome == null }.outcome)
     }
 
     @Test
@@ -139,39 +120,44 @@ class SubscribeControllerTest {
         api.subscribeHandler = { throw ApiException(ApiError.Http(409, "Already subscribed to this feed.")) }
         controller.onTextChange("http://h/x.xml")
         controller.subscribe()
-        val state = await { it.message != null }
+        val state = controller.await("the already-subscribed message and not busy") { it.message == SubscribeMessage.AlreadySubscribed && !it.busy }
         assertEquals(SubscribeMessage.AlreadySubscribed, state.message)
         assertEquals("http://h/x.xml", state.text)
-        assertTrue(await { !it.busy }.canSubscribe)
+        assertTrue(state.canSubscribe)
         assertNull(state.outcome)
 
         // Typing clears the message; a new attempt clears it too.
         controller.onTextChange("http://h/y.xml")
-        assertNull(await { it.text == "http://h/y.xml" }.message)
+        assertNull(controller.await("the new text without a message") { it.text == "http://h/y.xml" && it.message == null }.message)
     }
 
     @Test
     fun twoQuickTapsSendOneRequestAndBusyDisablesTheControls() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        api.subscribeHandler = { release.await(); feedDto(5) }
+        api.subscribeHandler = { entered.complete(Unit); release.await(); feedDto(5) }
         controller.onTextChange("http://h/x.xml")
         assertTrue(controller.subscribe())
+        // The second tap is refused synchronously (the running request is the single one); no waiting is needed.
         assertFalse(controller.subscribe())
-        val busy = await { it.busy }
+        awaitGate("the first request to reach the API", entered)
+        val busy = controller.await("busy") { it.busy }
         assertFalse(busy.canSubscribe)
-        delay(100)
         assertEquals(1, api.subscribeRequests.size)
         release.complete(Unit)
-        await { it.outcome != null }
+        controller.await("the outcome and not busy") { it.outcome != null && !it.busy }
         assertEquals(1, api.subscribeRequests.size)
     }
 
     @Test
     fun aRejectedTokenShowsNoMessage() {
-        api.subscribeHandler = { throw ApiException(ApiError.Unauthorized) }
+        val release = CompletableDeferred<Unit>()
+        api.subscribeHandler = { release.await(); throw ApiException(ApiError.Unauthorized) }
         controller.onTextChange("http://h/x.xml")
         controller.subscribe()
-        val state = await { !it.busy && rejection.rejected.value }
+        controller.await("busy") { it.busy } // barrier: the idle state before the tap must not satisfy the wait below
+        release.complete(Unit)
+        val state = controller.await("the token was rejected") { !it.busy && rejection.rejected.value }
         assertNull(state.message)
         assertNull(state.outcome)
     }
@@ -181,7 +167,7 @@ class SubscribeControllerTest {
         api.subscribeHandler = { throw IllegalStateException("leaks http://h/x.xml?token=SECRETMARK123") }
         controller.onTextChange("http://h/x.xml")
         controller.subscribe()
-        assertEquals(SubscribeMessage.Unexpected, await { it.message != null }.message)
+        assertEquals(SubscribeMessage.Unexpected, controller.await("the unexpected-error message") { it.message == SubscribeMessage.Unexpected }.message)
     }
 
     // ---- Validation, Clear, and restore ----
@@ -192,7 +178,7 @@ class SubscribeControllerTest {
     fun theTrimmedTextAsTypedReachesTheRepository() {
         controller.onTextChange("  HTTP://Feedhost:8080/Feeds/A.xml?x=1#frag ")
         assertTrue(controller.subscribe())
-        await { it.outcome != null || it.message != null }
+        controller.await("the outcome") { it.outcome != null && !it.busy }
         assertEquals(listOf("HTTP://Feedhost:8080/Feeds/A.xml?x=1#frag"), api.subscribeRequests)
     }
 
@@ -201,19 +187,19 @@ class SubscribeControllerTest {
         api.subscribeHandler = { throw ApiException(ApiError.Http(409, "Already subscribed to this feed.")) }
         controller.onTextChange("http://h/x.xml")
         controller.subscribe()
-        await { it.message == SubscribeMessage.AlreadySubscribed && !it.busy }
+        controller.await("the already-subscribed message") { it.message == SubscribeMessage.AlreadySubscribed && !it.busy }
 
         controller.onTextChange("ftp://example.com/x")
         assertFalse(controller.subscribe())
-        val scheme = await { it.text == "ftp://example.com/x" && it.validationError == FeedUrlProblem.BAD_SCHEME && it.message == null }
+        val scheme = controller.await("the bad-scheme error") { it.text == "ftp://example.com/x" && it.validationError == FeedUrlProblem.BAD_SCHEME && it.message == null }
         assertTrue(scheme.canSubscribe)
 
         controller.onTextChange("https://")
         assertFalse(controller.subscribe())
-        await { it.text == "https://" && it.validationError == FeedUrlProblem.INCOMPLETE && it.message == null }
+        controller.await("the incomplete error") { it.text == "https://" && it.validationError == FeedUrlProblem.INCOMPLETE && it.message == null }
 
         controller.onTextChange("https://e")
-        await { it.text == "https://e" && it.validationError == null && it.message == null }
+        controller.await("the acceptable address") { it.text == "https://e" && it.validationError == null && it.message == null }
         assertEquals(1, api.subscribeRequests.size)
     }
 
@@ -221,12 +207,12 @@ class SubscribeControllerTest {
     fun clearEmptiesTheFieldTheErrorAndTheMessageAndReportsTheText() {
         val seen = java.util.concurrent.CopyOnWriteArrayList<String>()
         val c = SubscribeController(SubscribeRepository(api, engine, rejection), scope, "http://h/restored.xml") { seen += it }
-        awaitState(c) { it.text == "http://h/restored.xml" }
+        c.await("the expected state") { it.text == "http://h/restored.xml" }
         c.onTextChange("nope")
         assertFalse(c.subscribe())
-        awaitState(c) { it.text == "nope" && it.validationError == FeedUrlProblem.BAD_SCHEME }
+        c.await("the expected state") { it.text == "nope" && it.validationError == FeedUrlProblem.BAD_SCHEME }
         c.clear()
-        awaitState(c) { it.text.isEmpty() && it.validationError == null && it.message == null }
+        c.await("the expected state") { it.text.isEmpty() && it.validationError == null && it.message == null }
         assertEquals(listOf("nope", ""), seen.toList())
     }
 
@@ -237,11 +223,11 @@ class SubscribeControllerTest {
         api.subscribeHandler = { entered.complete(Unit); release.await(); feedDto(5) }
         val seen = java.util.concurrent.CopyOnWriteArrayList<String>()
         val c = SubscribeController(SubscribeRepository(api, engine, rejection), scope, "http://h/x.xml") { seen += it }
-        awaitState(c) { it.text == "http://h/x.xml" }
+        c.await("the expected state") { it.text == "http://h/x.xml" }
         assertTrue(c.subscribe())
         // The fake is now blocked inside the subscribe call, so the request is running for certain.
-        runBlocking { withTimeout(5_000) { entered.await() } }
-        awaitState(c) { it.busy }
+        awaitGate("the subscribe call to be reached", entered)
+        c.await("busy") { it.busy }
 
         c.clear()
         assertFalse(c.subscribe())
@@ -249,7 +235,7 @@ class SubscribeControllerTest {
 
         release.complete(Unit)
         // The state that carries the outcome also carries the text: it must still be the original.
-        val done = awaitState(c) { it.outcome != null && !it.busy }
+        val done = c.await("the expected state") { it.outcome != null && !it.busy }
         assertEquals("http://h/x.xml", done.text)
         assertEquals(1, api.subscribeRequests.size)
     }

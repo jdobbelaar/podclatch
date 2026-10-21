@@ -13,10 +13,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -158,7 +156,7 @@ class SubscribeRepositoryTest {
         val release = CompletableDeferred<Unit>()
         env.api.subscribeHandler = { release.await(); feedDto(7) }
         val first = async(Dispatchers.Default) { env.repo.subscribe(url) }
-        withTimeout(5_000) { while (env.api.subscribeRequests.isEmpty()) delay(5) }
+        awaitCondition("the subscribe request to reach the API") { env.api.subscribeRequests.isNotEmpty() }
         assertTrue(env.repo.inProgress.value)
 
         assertEquals(SubscribeResult.Busy, env.repo.subscribe(url))
@@ -180,13 +178,13 @@ class SubscribeRepositoryTest {
         val release = CompletableDeferred<Unit>()
         env.api.subscribeHandler = { release.await(); feedDto(7) }
         val caller = launch(Dispatchers.Default, start = CoroutineStart.DEFAULT) { env.repo.subscribe(url) }
-        withTimeout(5_000) { while (env.api.subscribeRequests.isEmpty()) delay(5) }
+        awaitCondition("the subscribe request to reach the API") { env.api.subscribeRequests.isNotEmpty() }
 
         caller.cancel()
         release.complete(Unit)
         caller.join()
 
-        withTimeout(5_000) { while (env.repo.inProgress.value) delay(5) }
+        awaitCondition("the subscribe to finish") { !env.repo.inProgress.value }
         assertEquals(listOf("subscribe", "pull"), env.calls)
         assertFalse(env.repo.inProgress.value)
     }
