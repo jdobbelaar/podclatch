@@ -35,3 +35,6 @@ android/gradle/gradle-daemon-jvm.properties
 # Docker Compose secrets
 .env
 !.env.example
+
+# Agent worktrees created by Claude Code sessions
+.claude/worktrees/

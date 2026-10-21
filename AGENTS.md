@@ -38,7 +38,7 @@ Whole system (run from the repository root; created by US-29, so they do not exi
 ## Rules
 
 - Follow `_docs/podclatch-spec.md`. Do not build anything in its section 8 (Non-Goals).
-- Dependencies: the libraries named in spec section 3 are approved. Do not add any other dependency without asking. Android dependencies go in the version catalog; server dependencies go in `server/pyproject.toml`.
+- Dependencies and tools: choose well-maintained, widely used libraries with permissive licenses (Apache-2.0, MIT, BSD) when they save real work, and prefer the standard AndroidX/Jetpack and official libraries over hand-rolled equivalents. The human has delegated these choices, so do not stop to ask. Record every dependency or tool you add in the PR description under "Dependencies added", with a one-line reason, so the human can review it later. Still ask the human first for anything that costs money, needs an account or API key, sends data to a third party, or conflicts with the spec's section 8 non-goals (for example analytics or crash-reporting SDKs). Android dependencies go in the version catalog; server dependencies go in `server/pyproject.toml`.
 - One branch and one pull request per issue, named `us-xx-short-name`, with `Closes #n` in the PR. Never commit directly to `main`. Commit regularly.
 - Changing the API means changing `openapi.yaml` in the same pull request, before the code that uses it.
 - On Android, only repositories may call `PodClatchApi`; never a ViewModel or UI code.
