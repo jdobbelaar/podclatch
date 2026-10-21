@@ -508,7 +508,8 @@ interface so M3 can swap in the database.
 - Search field with ~400 ms debounce calling the server's search endpoint;
   results show artwork, title, author; loading, empty, and error states
   (including "server unreachable").
-- Tapping a result shows a preview (description) with a **Subscribe** button;
+- Tapping a result shows a preview (larger artwork, title, and author; the
+  search endpoint returns no description) with a **Subscribe** button;
   already-subscribed Feeds show "Subscribed" instead.
 
 **US-04 Subscribe view: RSS URL**
