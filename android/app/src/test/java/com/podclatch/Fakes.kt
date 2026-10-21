@@ -207,7 +207,9 @@ class FakeApi : PodClatchApi {
     val unsubscribeRequests = mutableListOf<Long>()
     var reorderHandler: suspend (List<Long>) -> List<FeedDto> = { ids -> ids.mapIndexed { i, id -> feedDto(id, priority = i) } }
     var unsubscribeHandler: suspend (Long) -> Unit = { }
-    var refreshHandler: suspend () -> List<RefreshResultDto> = { emptyList() }
+    val subscribeRequests = mutableListOf<String>()
+    var subscribeHandler: suspend (String) -> FeedDto = { feedDto(100, title = "New Feed") }
+    var refreshHandler:suspend () -> List<RefreshResultDto> = { emptyList() }
 
     private val inFlight = AtomicInteger(0)
     val maxInFlight = AtomicInteger(0)
@@ -243,6 +245,12 @@ class FakeApi : PodClatchApi {
         calls += "unsubscribe"
         unsubscribeRequests += feedId
         unsubscribeHandler(feedId)
+    }
+
+    override suspend fun subscribeFeed(feedUrl: String): FeedDto = tracked {
+        calls += "subscribe"
+        subscribeRequests += feedUrl
+        subscribeHandler(feedUrl)
     }
 
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> = tracked {

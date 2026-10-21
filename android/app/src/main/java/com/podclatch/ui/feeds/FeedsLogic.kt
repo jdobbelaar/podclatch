@@ -79,10 +79,15 @@ sealed interface FeedsMessage {
         val more: Int,
     ) : FeedsMessage
 
+    data class SubscribedSyncFailed(val reason: String) : FeedsMessage
     data class RefreshFailed(val reason: String) : FeedsMessage
     data class RefreshSyncFailed(val reason: String) : FeedsMessage
     data object Unexpected : FeedsMessage
 }
+
+/** The banner after a subscribe whose follow-up Sync failed; null when the Sync worked. */
+fun subscribeOutcomeMessage(syncFailure: String?): FeedsMessage? =
+    syncFailure?.let { FeedsMessage.SubscribedSyncFailed(it) }
 
 /**
  * The message after a Refresh whose request succeeded; null when nothing failed. Failed Feeds are listed

@@ -22,6 +22,12 @@ interface PodClatchApi {
     /** `DELETE /v1/feeds/{id}`: 204 with no body on success. */
     suspend fun unsubscribeFeed(feedId: Long)
 
+    /**
+     * `POST /v1/feeds`: subscribes to [feedUrl], sent exactly as given. 201 answers the new Feed; 409
+     * (already subscribed) and 422 (not a readable feed) are [ApiError.Http] with the server's detail.
+     */
+    suspend fun subscribeFeed(feedUrl: String): FeedDto
+
     /** `POST /v1/refresh`: no request body; one result per Feed in Feed Priority order. */
     suspend fun refreshAllFeeds(): List<RefreshResultDto>
 }

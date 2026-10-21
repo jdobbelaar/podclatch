@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,6 +71,7 @@ import com.podclatch.Config
 import com.podclatch.R
 import com.podclatch.data.db.FeedListItem
 import com.podclatch.ui.TabTopBar
+import com.podclatch.ui.subscribe.SubscribeOutcome
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -80,9 +82,20 @@ fun FeedsScreen(
     onOpenFeed: (Long) -> Unit,
     onSubscribe: () -> Unit,
     onOpenConnection: () -> Unit,
+    subscribeOutcome: SubscribeOutcome? = null,
+    onSubscribeOutcomeHandled: () -> Unit = {},
     vm: FeedsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // A Feed was just subscribed: show the top of the list, and say so if the follow-up Sync failed.
+    var scrollToTopRequests by remember { mutableIntStateOf(0) }
+    LaunchedEffect(subscribeOutcome) {
+        if (subscribeOutcome != null) {
+            subscribeOutcomeMessage(subscribeOutcome.syncFailure)?.let(vm::showMessage)
+            scrollToTopRequests += 1
+            onSubscribeOutcomeHandled()
+        }
+    }
     Scaffold(
         topBar = { TabTopBar(stringResource(R.string.tab_feeds), onOpenConnection) },
         floatingActionButton = {
@@ -109,6 +122,7 @@ fun FeedsScreen(
                 onDragStopped = vm::onDragStopped,
                 onRefresh = vm::refresh,
                 onRequestUnsubscribe = vm::requestUnsubscribe,
+                scrollToTopRequests = scrollToTopRequests,
             )
         }
     }
@@ -165,6 +179,7 @@ private fun messageLines(message: FeedsMessage): List<String> = when (message) {
         }
         if (message.more > 0) add(stringResource(R.string.message_refresh_more, message.more))
     }
+    is FeedsMessage.SubscribedSyncFailed -> listOf(stringResource(R.string.message_subscribed_sync_failed, message.reason))
     is FeedsMessage.RefreshFailed -> listOf(stringResource(R.string.message_refresh_failed, message.reason))
     is FeedsMessage.RefreshSyncFailed -> listOf(stringResource(R.string.message_refresh_sync_failed, message.reason))
     FeedsMessage.Unexpected -> listOf(stringResource(R.string.message_unexpected))
@@ -239,6 +254,7 @@ private fun FeedsList(
     onDragStopped: () -> Unit,
     onRefresh: () -> Boolean,
     onRequestUnsubscribe: (Long) -> Unit,
+    scrollToTopRequests: Int,
 ) {
     val screenHeight = LocalWindowInfo.current.containerSize.height
     var pull by remember { mutableFloatStateOf(0f) }
@@ -255,6 +271,9 @@ private fun FeedsList(
     }
 
     val listState = rememberLazyListState()
+    LaunchedEffect(scrollToTopRequests) {
+        if (scrollToTopRequests > 0) listState.scrollToItem(0)
+    }
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
         onMove(from.key as Long, to.key as Long)
     }

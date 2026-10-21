@@ -24,8 +24,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.podclatch.R
 import com.podclatch.ui.FeedDetailPlaceholderScreen
 import com.podclatch.ui.QueuePlaceholderScreen
-import com.podclatch.ui.SubscribePlaceholderScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.podclatch.ui.feeds.FeedsScreen
+import com.podclatch.ui.subscribe.SUBSCRIBE_OUTCOME_KEY
+import com.podclatch.ui.subscribe.SubscribeOutcome
+import com.podclatch.ui.subscribe.SubscribeScreen
 
 /**
  * The single NavHost: Queue (the start) and Feeds are the top-level destinations with the bottom bar;
@@ -61,14 +64,28 @@ fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
     ) { padding ->
         NavHost(navController, startDestination = Queue, modifier = Modifier.padding(padding)) {
             composable<Queue> { QueuePlaceholderScreen(onOpenConnection) }
-            composable<Feeds> {
+            composable<Feeds> { feedsEntry ->
+                // The Subscribe view leaves its outcome here before it pops; Feeds reads it once.
+                val handle = feedsEntry.savedStateHandle
+                val outcome by handle.getStateFlow<SubscribeOutcome?>(SUBSCRIBE_OUTCOME_KEY, null)
+                    .collectAsStateWithLifecycle()
                 FeedsScreen(
                     onOpenFeed = { id -> navController.navigate(FeedDetail(id)) { launchSingleTop = true } },
                     onSubscribe = { navController.navigate(Subscribe) { launchSingleTop = true } },
                     onOpenConnection = onOpenConnection,
+                    subscribeOutcome = outcome,
+                    onSubscribeOutcomeHandled = { handle[SUBSCRIBE_OUTCOME_KEY] = null },
                 )
             }
-            composable<Subscribe> { SubscribePlaceholderScreen(onBack = { navController.popBackStack() }) }
+            composable<Subscribe> {
+                SubscribeScreen(
+                    onBack = { navController.popBackStack() },
+                    onSubscribed = { outcome ->
+                        navController.previousBackStackEntry?.savedStateHandle?.set(SUBSCRIBE_OUTCOME_KEY, outcome)
+                        navController.popBackStack()
+                    },
+                )
+            }
             composable<FeedDetail> { FeedDetailPlaceholderScreen(onBack = { navController.popBackStack() }) }
         }
     }

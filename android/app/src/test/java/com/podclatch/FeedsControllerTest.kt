@@ -117,7 +117,8 @@ class FeedsControllerTest {
         controller.onDragStarted()
         controller.onMove(1, 3)
         controller.onDragStopped()
-        val state = await("failed") { !it.busy }
+        // The token is rejected before busy clears; waiting on it avoids reading the stale pre-action state.
+        val state = await("failed") { !it.busy && rejection.rejected.value }
         assertNull(state.message)
         assertTrue(rejection.rejected.value)
     }
@@ -159,7 +160,8 @@ class FeedsControllerTest {
         loaded()
         api.refreshHandler = { throw ApiException(ApiError.Unreachable(false)) }
         controller.refresh()
-        val done = await("done") { !it.refreshing }
+        // Wait for the message too: the first emitted state can still be the stale one without refreshing.
+        val done = await("done") { !it.refreshing && it.message != null }
         assertEquals(FeedsMessage.RefreshFailed("Cannot reach the server."), done.message)
         assertEquals(listOf("refresh"), api.calls)
     }
