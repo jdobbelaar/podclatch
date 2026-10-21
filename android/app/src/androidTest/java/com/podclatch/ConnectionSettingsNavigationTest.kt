@@ -48,8 +48,6 @@ class ConnectionSettingsNavigationTest {
         context.startActivity(
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
         )
-        // The emulator image may show a 16 KB page-size dialog on launch.
-        device.wait(Until.findObject(By.text("Don't Show Again")), 4_000)?.click()
         pointAppAtTheMockServer()
     }
 
@@ -74,18 +72,29 @@ class ConnectionSettingsNavigationTest {
 
     private fun openConnectionSettings() {
         wait(res("overflow_menu"))!!.click()
-        wait(res("menu_connection_settings"))!!.click()
+        // The menu is a popup window, which does not expose test tags; find the item by its text.
+        wait(By.text("Connection settings"))!!.click()
         assertNotNull("connection screen", wait(res("server_url")))
     }
 
     /** Connects the app to the mock server, from the connection screen if it is shown or from the menu. */
     private fun pointAppAtTheMockServer() {
-        val start = device.wait(Until.findObject(By.res("server_url").pkg("com.podclatch")), 5_000)
-            ?: run {
-                openConnectionSettings()
-                wait(res("server_url"))
+        // The emulator image may show system dialogs on launch (a 16 KB page-size notice, "isn't
+        // responding"); dismiss them while waiting for the app's first screen.
+        val deadline = System.currentTimeMillis() + 60_000
+        var onConnectionScreen: Boolean? = null
+        while (onConnectionScreen == null && System.currentTimeMillis() < deadline) {
+            device.findObject(By.text("Don't Show Again"))?.click()
+            device.findObject(By.res("aerr_wait"))?.click()
+            onConnectionScreen = when {
+                device.hasObject(res("server_url")) -> true
+                device.hasObject(res("overflow_menu")) -> false
+                else -> null
             }
-        assertNotNull(start)
+            if (onConnectionScreen == null) Thread.sleep(500)
+        }
+        assertNotNull("the app's first screen", onConnectionScreen)
+        if (onConnectionScreen == false) openConnectionSettings()
         fill("server_url", server.url("/").toString().trimEnd('/'))
         fill("auth_token", "test-token")
         wait(res("test_connection"))!!.click()
