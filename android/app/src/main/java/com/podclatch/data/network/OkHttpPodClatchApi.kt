@@ -88,26 +88,17 @@ class OkHttpPodClatchApi @Inject constructor(
     private suspend fun execute(resolved: Resolved, builder: Request.Builder, authenticated: Boolean): String {
         if (authenticated) builder.header("Authorization", "Bearer ${resolved.token}")
         val call = resolved.client.newCall(builder.build())
-        val response = try {
+        val (code, text) = try {
             call.await()
         } catch (e: InterruptedIOException) {
             throw ApiException(ApiError.Unreachable(timeout = true))
         } catch (e: IOException) {
             throw ApiException(ApiError.Unreachable(timeout = false))
         }
-        response.use {
-            val text = try {
-                it.body.string()
-            } catch (e: InterruptedIOException) {
-                throw ApiException(ApiError.Unreachable(timeout = true))
-            } catch (e: IOException) {
-                throw ApiException(ApiError.Unreachable(timeout = false))
-            }
-            return when {
-                it.isSuccessful -> text
-                it.code == 401 -> throw ApiException(ApiError.Unauthorized)
-                else -> throw ApiException(ApiError.Http(it.code, errorDetail(text, resolved.token)))
-            }
+        return when {
+            code in 200..299 -> text
+            code == 401 -> throw ApiException(ApiError.Unauthorized)
+            else -> throw ApiException(ApiError.Http(code, errorDetail(text, resolved.token)))
         }
     }
 
@@ -130,11 +121,22 @@ class OkHttpPodClatchApi @Inject constructor(
         throw ApiException(ApiError.Malformed)
     }
 
-    private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+    /**
+     * Runs the call and returns the status code and the whole body. The body is read inside the callback,
+     * on OkHttp's own thread: resuming first would read it on the caller's thread, and on the main thread
+     * that is a NetworkOnMainThreadException.
+     */
+    private suspend fun Call.await(): Pair<Int, String> = suspendCancellableCoroutine { cont ->
         cont.invokeOnCancellation { cancel() }
         enqueue(object : Callback {
             override fun onResponse(call: Call, response: Response) {
-                cont.resume(response)
+                val result = try {
+                    response.use { it.code to it.body.string() }
+                } catch (e: IOException) {
+                    if (!cont.isCancelled) cont.resumeWithException(e)
+                    return
+                }
+                cont.resume(result)
             }
 
             override fun onFailure(call: Call, e: IOException) {

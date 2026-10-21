@@ -79,9 +79,10 @@ class ConnectionViewModel @Inject constructor(
 
     fun cancel() = _state.update { it.copy(fromHome = false) }
 
-    fun onUrlChange(value: String) = _state.update { it.copy(url = value) }
+    // An edit makes the last result stale, so it is cleared along with the Save enablement.
+    fun onUrlChange(value: String) = _state.update { it.copy(url = value, message = null) }
 
-    fun onTokenChange(value: String) = _state.update { it.copy(token = value) }
+    fun onTokenChange(value: String) = _state.update { it.copy(token = value, message = null) }
 
     fun toggleShowToken() = _state.update { it.copy(showToken = !it.showToken) }
 
