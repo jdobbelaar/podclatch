@@ -61,6 +61,7 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class PlaybackService : MediaLibraryService() {
     @Inject lateinit var resolver: EpisodeMediaResolver
+    @Inject lateinit var downloadStarter: PlayDownloadStarter
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var appClient: OkHttpClient
     @Inject lateinit var speed: PlaybackSpeedUseCase
@@ -359,6 +360,8 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun resolveItem(item: MediaItem): MediaItem? {
         val id = item.mediaId.toLongOrNull() ?: return null
         val resolved = resolver.resolve(id) ?: return null
+        // After the resolve, so this play uses the state as it was; the request never makes the play wait.
+        appScope.launch { downloadStarter.onPlayRequested(id) }
         return mediaItemOf(resolved)
     }
 }
