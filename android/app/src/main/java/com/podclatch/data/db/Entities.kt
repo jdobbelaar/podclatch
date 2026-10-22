@@ -95,6 +95,14 @@ data class PlaybackEpisode(
     override fun toString() = "PlaybackEpisode(id=$id, downloadState=$downloadState)"
 }
 
+/** The state columns of one Episode, for the playback recorder; it leaves out every address. */
+data class EpisodeProgress(
+    val status: EpisodeStatus,
+    val playedAt: Long?,
+    val positionSec: Int,
+    val stateUpdatedAt: Long,
+)
+
 /**
  * One row of Feed Detail: the visible columns of an Episode. It leaves out the audio address and the
  * description, so a long list stays small and nothing here can print an address.

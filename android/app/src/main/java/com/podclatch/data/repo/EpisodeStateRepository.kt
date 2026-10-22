@@ -23,6 +23,24 @@ enum class MarkResult {
     NOT_FOUND,
 }
 
+/** What a playback write did. */
+enum class PlaybackWriteOutcome {
+    /** The Episode row and the outbox row were written. */
+    SAVED,
+
+    /** The Episode is not New (a Mark made it Played), so the write was refused. */
+    NOT_NEW,
+
+    /** No such Episode (for example its Feed was unsubscribed); nothing was written. */
+    UNKNOWN_EPISODE,
+
+    /** Nothing to change: the saved position already is the same. */
+    UNCHANGED,
+}
+
+/** The [outcome] of a playback write and, when it was SAVED, the `stateUpdatedAt` it stamped. */
+data class PlaybackWriteResult(val outcome: PlaybackWriteOutcome, val stateUpdatedAt: Long? = null)
+
 /**
  * Records local New / Played changes (spec 5.3 Mark Played / New). Each change updates the Episode row
  * and writes the outbox row in one Room transaction. Callers that want the change pushed right away
@@ -85,6 +103,33 @@ class EpisodeStateRepository @Inject constructor(
         changed
     }
 
+    /**
+     * Saves where playback is (floor of the player's position in seconds) for an Episode that is `NEW` at
+     * this moment. Played Episodes are never touched (a replay changes nothing), an equal position writes
+     * nothing, and an Episode that is gone is reported, not thrown. One Room transaction: Episode row and
+     * outbox row, stamped strictly above the stored and pending stamps.
+     */
+    suspend fun savePosition(episodeId: Long, positionSec: Int): PlaybackWriteResult = store.transaction {
+        val episode = getEpisode(episodeId) ?: return@transaction PlaybackWriteResult(PlaybackWriteOutcome.UNKNOWN_EPISODE)
+        if (episode.status != EpisodeStatus.NEW) return@transaction PlaybackWriteResult(PlaybackWriteOutcome.NOT_NEW)
+        val position = positionSec.coerceAtLeast(0)
+        if (position == episode.positionSec) return@transaction PlaybackWriteResult(PlaybackWriteOutcome.UNCHANGED)
+        val stamp = write(episode, EpisodeStatus.NEW, playedAt = null, positionSec = position, now = clock.nowMs())
+        PlaybackWriteResult(PlaybackWriteOutcome.SAVED, stamp)
+    }
+
+    /**
+     * Playback finished a `NEW` Episode: `PLAYED`, `playedAt = now`, `positionSec` as given. Refuses an
+     * Episode that is not New (`playedAt` of a Played Episode never changes).
+     */
+    suspend fun markPlayedByPlayback(episodeId: Long, positionSec: Int): PlaybackWriteResult = store.transaction {
+        val episode = getEpisode(episodeId) ?: return@transaction PlaybackWriteResult(PlaybackWriteOutcome.UNKNOWN_EPISODE)
+        if (episode.status != EpisodeStatus.NEW) return@transaction PlaybackWriteResult(PlaybackWriteOutcome.NOT_NEW)
+        val now = clock.nowMs()
+        val stamp = write(episode, EpisodeStatus.PLAYED, playedAt = now, positionSec = positionSec.coerceAtLeast(0), now = now)
+        PlaybackWriteResult(PlaybackWriteOutcome.SAVED, stamp)
+    }
+
     private suspend fun CacheTransaction.writePlayed(episode: Episode, now: Long, positionSec: Int = episode.positionSec) =
         write(episode, EpisodeStatus.PLAYED, playedAt = now, positionSec = positionSec, now = now)
 
@@ -97,11 +142,12 @@ class EpisodeStateRepository @Inject constructor(
         playedAt: Long?,
         positionSec: Int,
         now: Long,
-    ) {
+    ): Long {
         val previousStamp = maxOf(episode.stateUpdatedAt, getPending(episode.id)?.stateUpdatedAt ?: Long.MIN_VALUE)
         // Strictly increasing: the server treats an equal timestamp as STALE.
         val stamp = maxOf(now, previousStamp + 1)
         updateEpisodeState(episode.id, status, playedAt, positionSec, stamp)
         putPending(PendingStateWrite(episode.id, status, playedAt, positionSec, stamp))
+        return stamp
     }
 }

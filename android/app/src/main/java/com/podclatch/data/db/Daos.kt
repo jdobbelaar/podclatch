@@ -98,6 +98,10 @@ interface EpisodeDao {
     @Query("SELECT * FROM episode WHERE id = :id")
     suspend fun getById(id: Long): Episode?
 
+    /** The state columns of one Episode; emits null when it is not cached. Emits again on any change to them. */
+    @Query("SELECT status, playedAt, positionSec, stateUpdatedAt FROM episode WHERE id = :id")
+    fun observeProgress(id: Long): Flow<EpisodeProgress?>
+
     /** The Episode joined with its Feed's title and artwork, or null for an unknown id. */
     @Query(
         "SELECT e.id AS id, e.title AS title, f.title AS feedTitle, e.audioUrl AS audioUrl, " +

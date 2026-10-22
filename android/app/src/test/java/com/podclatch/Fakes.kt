@@ -132,6 +132,10 @@ class FakeCacheStore : CacheStore {
             .map { FeedEpisode(it.id, it.title, it.publishedAt, it.durationSec, it.status, it.positionSec) }
     }.distinctUntilChanged()
 
+    override fun observeEpisode(id: Long): Flow<com.podclatch.data.db.EpisodeProgress?> = version.map {
+        episodes[id]?.let { com.podclatch.data.db.EpisodeProgress(it.status, it.playedAt, it.positionSec, it.stateUpdatedAt) }
+    }.distinctUntilChanged()
+
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.values.sortedBy { it.episodeId }
 
     override suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String> =

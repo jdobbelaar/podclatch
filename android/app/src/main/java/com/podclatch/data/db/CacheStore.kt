@@ -30,6 +30,9 @@ interface CacheStore {
     /** The Feed's Episodes, newest first (`publishedAt`, then `id`, descending); emits on any change to them. */
     fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>>
 
+    /** One Episode's state columns; emits null when it is not cached (also right after it was removed). */
+    fun observeEpisode(id: Long): Flow<EpisodeProgress?>
+
     suspend fun pendingWrites(): List<PendingStateWrite>
     suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String>
     suspend fun localPathsOfFeeds(feedIds: Collection<Long>): List<String>
@@ -90,6 +93,8 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
     override fun observeFeed(id: Long): Flow<Feed?> = feeds.observeFeed(id).distinctUntilChanged()
     override fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>> =
         episodes.observeEpisodes(feedId).distinctUntilChanged()
+
+    override fun observeEpisode(id: Long): Flow<EpisodeProgress?> = episodes.observeProgress(id).distinctUntilChanged()
 
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.getAll()
 

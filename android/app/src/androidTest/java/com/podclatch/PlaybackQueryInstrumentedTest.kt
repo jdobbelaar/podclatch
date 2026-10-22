@@ -9,6 +9,7 @@ import com.podclatch.data.db.Feed
 import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.db.PodClatchDatabase
 import com.podclatch.data.db.RoomCacheStore
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -69,6 +70,22 @@ class PlaybackQueryInstrumentedTest {
         assertNull(found.localPath)
         assertEquals(DownloadState.NONE, found.downloadState)
         assertEquals("https://art.example.com/feed.png", found.feedArtworkUrl)
+    }
+
+    @Test
+    fun observeEpisodeEmitsTheStateColumnsThenNullOnceTheFeedIsRemoved() = runBlocking {
+        store.transaction {
+            insertFeedIfAbsent(cachedFeed(1))
+            insertEpisodeIfAbsent(cachedEpisode(10, 1))
+        }
+        val first = store.observeEpisode(10).first()!!
+        assertEquals(EpisodeStatus.NEW, first.status)
+        assertEquals(0, first.positionSec)
+        assertEquals(1_000L, first.stateUpdatedAt)
+        store.transaction { updateEpisodeState(10, EpisodeStatus.NEW, null, 42, 2_000) }
+        assertEquals(42, store.observeEpisode(10).first()!!.positionSec)
+        store.transaction { deleteFeed(1) }
+        assertNull(store.observeEpisode(10).first())
     }
 
     @Test
