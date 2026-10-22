@@ -5,6 +5,7 @@ import com.podclatch.data.db.CacheTransaction
 import com.podclatch.data.db.Episode
 import com.podclatch.data.db.EpisodeStatus
 import com.podclatch.data.db.Feed
+import com.podclatch.data.db.FeedEpisode
 import com.podclatch.data.db.FeedListItem
 import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.db.PendingStateWrite
@@ -111,6 +112,14 @@ class FakeCacheStore : CacheStore {
             )
         }
     }.distinctUntilChanged()
+    override fun observeFeed(id: Long): Flow<Feed?> = version.map { feeds[id] }.distinctUntilChanged()
+
+    override fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>> = version.map {
+        episodes.values.filter { it.feedId == feedId }
+            .sortedWith(compareByDescending<Episode> { it.publishedAt }.thenByDescending { it.id })
+            .map { FeedEpisode(it.id, it.title, it.publishedAt, it.durationSec, it.status, it.positionSec) }
+    }.distinctUntilChanged()
+
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.values.sortedBy { it.episodeId }
 
     override suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String> =
@@ -132,6 +141,7 @@ class FakeCacheStore : CacheStore {
     private inner class Tx : CacheTransaction {
         override suspend fun feedExists(id: Long) = id in feeds
         override suspend fun getEpisode(id: Long) = episodes[id]
+        override suspend fun episodesOfFeed(feedId: Long) = episodes.values.filter { it.feedId == feedId }.sortedBy { it.id }
         override suspend fun allPending() = pending.values.toList()
         override suspend fun getPending(episodeId: Long) = pending[episodeId]
 
@@ -232,6 +242,10 @@ class FakeApi : PodClatchApi {
     val searchRequests = mutableListOf<String>()
     var searchHandler: suspend (String) -> List<SearchResultDto> = { emptyList() }
     var refreshHandler:suspend () -> List<RefreshResultDto> = { emptyList() }
+    val listenOrderRequests = mutableListOf<Pair<Long, ListenOrder>>()
+    val refreshFeedRequests = mutableListOf<Long>()
+    var listenOrderHandler: suspend (Long, ListenOrder) -> FeedDto = { id, order -> feedDto(id).copy(listenOrder = order) }
+    var refreshFeedHandler: suspend (Long) -> List<RefreshResultDto> = { id -> listOf(RefreshResultDto(id, true)) }
 
     private val inFlight = AtomicInteger(0)
     val maxInFlight = AtomicInteger(0)
@@ -279,6 +293,18 @@ class FakeApi : PodClatchApi {
         calls += "search"
         searchRequests += q
         searchHandler(q)
+    }
+
+    override suspend fun updateFeedListenOrder(feedId: Long, listenOrder: ListenOrder): FeedDto = tracked {
+        calls += "listenOrder"
+        listenOrderRequests += feedId to listenOrder
+        listenOrderHandler(feedId, listenOrder)
+    }
+
+    override suspend fun refreshFeed(feedId: Long): List<RefreshResultDto> = tracked {
+        calls += "refreshFeed"
+        refreshFeedRequests += feedId
+        refreshFeedHandler(feedId)
     }
 
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> = tracked {

@@ -95,6 +95,21 @@ data class PlaybackEpisode(
     override fun toString() = "PlaybackEpisode(id=$id, downloadState=$downloadState)"
 }
 
+/**
+ * One row of Feed Detail: the visible columns of an Episode. It leaves out the audio address and the
+ * description, so a long list stays small and nothing here can print an address.
+ */
+data class FeedEpisode(
+    val id: Long,
+    val title: String,
+    val publishedAt: Long,
+    val durationSec: Int?,
+    val status: EpisodeStatus,
+    val positionSec: Int,
+) {
+    override fun toString() = "FeedEpisode(id=$id, status=$status)"
+}
+
 /** One bar of the Feeds tab: the visible columns of a Feed plus its live unplayed count. */
 data class FeedListItem(
     val id: Long,

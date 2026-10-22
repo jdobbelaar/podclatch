@@ -1,5 +1,7 @@
 package com.podclatch.data.network
 
+import com.podclatch.data.db.ListenOrder
+
 /**
  * The one door to PodClatch Server. Only repositories and the Sync engine call it; ViewModels and UI
  * never do. Every method throws [ApiException] on failure.
@@ -33,6 +35,15 @@ interface PodClatchApi {
      * trims it); it is never logged.
      */
     suspend fun searchPodcasts(q: String): List<SearchResultDto>
+
+    /** `PATCH /v1/feeds/{id}`: sets the Feed's Listen Order; 200 answers the updated Feed. */
+    suspend fun updateFeedListenOrder(feedId: Long, listenOrder: ListenOrder): FeedDto
+
+    /**
+     * `POST /v1/feeds/{id}/refresh`: no request body; runs the refresh before answering. 200 answers
+     * exactly one result, and a failure of the Feed is `ok: false` inside it.
+     */
+    suspend fun refreshFeed(feedId: Long): List<RefreshResultDto>
 
     /** `POST /v1/refresh`: no request body; one result per Feed in Feed Priority order. */
     suspend fun refreshAllFeeds(): List<RefreshResultDto>

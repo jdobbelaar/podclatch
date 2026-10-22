@@ -147,6 +147,10 @@ data class SearchResultDto(
 @Serializable
 data class ReorderRequest(val feedIds: List<Long>)
 
+/** Body of `PATCH /v1/feeds/{id}`. */
+@Serializable
+data class UpdateFeedRequest(val listenOrder: ListenOrder)
+
 /** One item of the `POST /v1/refresh` answer; [error] is absent when [ok] is true. */
 @Serializable
 data class RefreshResultDto(

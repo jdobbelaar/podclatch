@@ -1,6 +1,5 @@
 package com.podclatch
 
-import com.podclatch.data.db.FeedListItem
 import com.podclatch.data.network.ApiError
 import com.podclatch.data.network.RefreshResultDto
 import com.podclatch.domain.FailureReason
@@ -11,11 +10,11 @@ import com.podclatch.ui.feeds.RefreshFeedError
 import com.podclatch.ui.feeds.badgeText
 import com.podclatch.ui.feeds.buildRefreshMessage
 import com.podclatch.ui.feeds.moveItem
-import com.podclatch.ui.feeds.pullPercent
-import com.podclatch.ui.feeds.pullProgress
+import com.podclatch.ui.common.pullPercent
+import com.podclatch.ui.common.pullProgress
 import com.podclatch.ui.feeds.resolveDrop
 import com.podclatch.ui.feeds.shouldPopFeedDetail
-import com.podclatch.ui.feeds.shouldRefresh
+import com.podclatch.ui.common.shouldRefresh
 import com.podclatch.ui.nav.Tab
 import com.podclatch.ui.nav.tabForRoute
 import org.junit.Assert.assertEquals
@@ -94,14 +93,11 @@ class FeedsLogicTest {
 
     // ---- Feed Detail pop rule ----
 
-    private fun item(id: Long) = FeedListItem(id, "T$id", "", "", 0, 0)
-
     @Test
     fun feedDetailPopsOnlyAfterALoadWithoutTheFeed() {
-        assertFalse(shouldPopFeedDetail(null, 5))
-        assertFalse(shouldPopFeedDetail(listOf(item(5)), 5))
-        assertTrue(shouldPopFeedDetail(listOf(item(6)), 5))
-        assertTrue(shouldPopFeedDetail(emptyList(), 5))
+        assertFalse(shouldPopFeedDetail(feedRead = false, feedPresent = false))
+        assertFalse(shouldPopFeedDetail(feedRead = true, feedPresent = true))
+        assertTrue(shouldPopFeedDetail(feedRead = true, feedPresent = false))
     }
 
     // ---- tab mapping ----

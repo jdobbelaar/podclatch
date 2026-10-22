@@ -1,12 +1,11 @@
 package com.podclatch.ui.feeds
 
 import com.podclatch.Config
-import com.podclatch.data.db.FeedListItem
 import com.podclatch.data.network.RefreshResultDto
 import com.podclatch.domain.SyncResult
 
 /*
- * The pure rules behind the Feeds tab: list moves, the big swipe, the badge, the messages, and the
+ * The pure rules behind the Feeds tab: list moves, the badge, the messages, and the
  * Feed Detail pop rule. They are plain functions so JVM tests cover them without a device.
  */
 
@@ -40,28 +39,14 @@ fun resolveDrop(working: List<Long>, serverIds: List<Long>): DropDecision = when
     else -> DropDecision.Send(working)
 }
 
-/** Pull distance above which a release starts a Refresh. */
-fun pullThresholdPx(screenHeightPx: Int): Float = Config.PULL_REFRESH_THRESHOLD_FRACTION * screenHeightPx
-
-/** True only when the pull is strictly beyond the threshold. */
-fun shouldRefresh(pullPx: Float, screenHeightPx: Int): Boolean = pullPx > pullThresholdPx(screenHeightPx)
-
-/** 0 at no pull, 1 at and beyond the threshold. */
-fun pullProgress(pullPx: Float, screenHeightPx: Int): Float {
-    val threshold = pullThresholdPx(screenHeightPx)
-    if (threshold <= 0f) return 0f
-    return (pullPx / threshold).coerceIn(0f, 1f)
-}
-
-/** The integer percent the indicator announces (0 to 100). */
-fun pullPercent(pullPx: Float, screenHeightPx: Int): Int = (pullProgress(pullPx, screenHeightPx) * 100).toInt()
-
 /** The badge text: the number, or `99+` above 99. The content description keeps the exact number. */
 fun badgeText(count: Int): String = if (count > 99) "99+" else count.toString()
 
-/** The Feed Detail placeholder pops itself only after the list has loaded once and the id is not in it. */
-fun shouldPopFeedDetail(items: List<FeedListItem>?, feedId: Long): Boolean =
-    items != null && items.none { it.id == feedId }
+/**
+ * Feed Detail pops itself only after the cache has been read once ([feedRead]) and the Feed is not in it
+ * ([feedPresent] is false), so nothing pops before the first load.
+ */
+fun shouldPopFeedDetail(feedRead: Boolean, feedPresent: Boolean): Boolean = feedRead && !feedPresent
 
 /** A Feed's refresh failure: [title] is null when the Feed is not in the cache. */
 data class RefreshFeedError(val title: String?, val error: String)

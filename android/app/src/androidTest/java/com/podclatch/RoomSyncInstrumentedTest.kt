@@ -25,6 +25,7 @@ import com.podclatch.data.network.SyncPageDto
 import com.podclatch.data.network.TombstoneDto
 import com.podclatch.data.network.TombstoneEntityType
 import com.podclatch.data.repo.EpisodeStateRepository
+import com.podclatch.data.repo.MarkResult
 import com.podclatch.data.repo.Settings
 import com.podclatch.data.repo.SettingsRepository
 import com.podclatch.domain.DiskFileDeleter
@@ -226,19 +227,19 @@ class RoomSyncInstrumentedTest {
         seed()
         var now = 10_000L
         val repo = EpisodeStateRepository(store) { now }
-        assertTrue(runBlocking { repo.markPlayed(10) })
+        assertEquals(MarkResult.CHANGED, runBlocking { repo.markPlayed(10) })
         var ep = episodeRow(10)!!
         assertEquals(EpisodeStatus.PLAYED, ep.status)
         assertEquals(10_000L, ep.playedAt)
         assertEquals(10_000L, runBlocking { db.pendingStateWriteDao().getById(10) }!!.stateUpdatedAt)
-        assertTrue(runBlocking { repo.markNew(10) })
+        assertEquals(MarkResult.CHANGED, runBlocking { repo.markNew(10) })
         ep = episodeRow(10)!!
         assertEquals(EpisodeStatus.NEW, ep.status)
         assertNull(ep.playedAt)
         assertEquals(0, ep.positionSec)
         assertEquals(10_001L, ep.stateUpdatedAt)
         assertEquals(1, runBlocking { db.pendingStateWriteDao().getAll() }.size)
-        assertFalse(runBlocking { repo.markPlayed(404) })
+        assertEquals(MarkResult.NOT_FOUND, runBlocking { repo.markPlayed(404) })
         now = 1
     }
 
@@ -401,6 +402,11 @@ private class ScriptedApi : PodClatchApi {
 
     override suspend fun searchPodcasts(q: String): List<com.podclatch.data.network.SearchResultDto> =
         throw UnsupportedOperationException()
+
+    override suspend fun updateFeedListenOrder(feedId: Long, listenOrder: ListenOrder): FeedDto =
+        throw UnsupportedOperationException()
+
+    override suspend fun refreshFeed(feedId: Long): List<RefreshResultDto> = emptyList()
 
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> = emptyList()
 }

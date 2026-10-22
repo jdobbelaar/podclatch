@@ -1,5 +1,7 @@
 package com.podclatch
 
+import com.podclatch.ui.feeddetail.FeedDetailController
+import com.podclatch.ui.feeddetail.FeedDetailUiState
 import com.podclatch.ui.feeds.FeedsController
 import com.podclatch.ui.feeds.FeedsUiState
 import com.podclatch.ui.subscribe.SubscribeController
@@ -64,3 +66,6 @@ private fun describeFeeds(s: FeedsUiState) =
 private fun describeSubscribe(s: SubscribeUiState) =
     "busy=${s.busy} message=${s.message} hasOutcome=${s.outcome != null} validationError=${s.validationError} " +
         "textLength=${s.text.length}"
+
+fun FeedDetailController.await(what: String, condition: (FeedDetailUiState) -> Boolean): FeedDetailUiState =
+    awaitState(uiState, what, describe = { it.toString() }, condition = condition)
