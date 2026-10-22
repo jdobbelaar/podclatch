@@ -5,6 +5,7 @@ import os
 import struct
 import sys
 import threading
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -102,6 +103,59 @@ class FixtureTest(unittest.TestCase):
             with self.subTest(path=path):
                 response, _ = self.request("GET", path)
                 self.assertEqual(404, response.status)
+
+    def test_gone_is_410_with_an_empty_body(self):
+        for path in ("/gone/x.wav", "/gone/a/b/c"):
+            with self.subTest(path=path):
+                response, body = self.request("GET", path)
+                self.assertEqual(410, response.status)
+                self.assertEqual(b"", body)
+        response, _ = self.request("GET", "/gone/")
+        self.assertEqual(404, response.status)
+
+    def test_slow_serves_the_same_bytes_as_the_plain_path(self):
+        _, whole = self.request("GET", "/tone-1-440.wav")
+        response, body = self.request("GET", "/slow/2000/tone-1-440.wav")
+        self.assertEqual(200, response.status)
+        self.assertEqual(str(len(whole)), response.getheader("Content-Length"))
+        self.assertEqual(whole, body)
+
+    def test_slow_range_and_404_behave_like_the_plain_path(self):
+        _, whole = self.request("GET", "/tone-1-440.wav")
+        response, body = self.request("GET", "/slow/2000/tone-1-440.wav", {"Range": "bytes=100-299"})
+        self.assertEqual(206, response.status)
+        self.assertEqual("bytes 100-299/%d" % len(whole), response.getheader("Content-Range"))
+        self.assertEqual(whole[100:300], body)
+        response, _ = self.request("GET", "/slow/2000/tone-1-440.wav", {"Range": "bytes=%d-" % len(whole)})
+        self.assertEqual(416, response.status)
+        response, _ = self.request("GET", "/slow/2000/missing.wav")
+        self.assertEqual(404, response.status)
+
+    def test_slow_does_not_follow_redirects_or_nest(self):
+        for path in (
+            "/slow/2000/redirect/tone-1-440.wav", "/slow/2000/gone/x", "/slow/2000/slow/2000/tone-1-440.wav",
+            "/slow/0/tone-1-440.wav", "/slow/100001/tone-1-440.wav", "/slow/abc/tone-1-440.wav", "/slow/2000", "/slow/",
+        ):
+            with self.subTest(path=path):
+                response, _ = self.request("GET", path)
+                self.assertEqual(404, response.status)
+
+    def test_slow_paces_the_body(self):
+        # 16,044 bytes at 20 kB/s take about 0.8 s; accept anything within a factor of three either way.
+        expected = 16044 / 20000
+        started = time.monotonic()
+        _, body = self.request("GET", "/slow/20/tone-1-440.wav")
+        elapsed = time.monotonic() - started
+        self.assertEqual(16044, len(body))
+        self.assertGreater(elapsed, expected / 3)
+        self.assertLess(elapsed, expected * 3)
+
+    def test_log_lines_for_the_new_routes_hold_the_path_as_requested(self):
+        self.lines.clear()
+        self.request("GET", "/gone/x.wav", {"Authorization": "Bearer hunter2"})
+        self.request("GET", "/slow/2000/tone-1-440.wav?secret=abc")
+        self.assertEqual(["GET /gone/x.wav 410 auth=yes", "GET /slow/2000/tone-1-440.wav 200 auth=no"], self.lines)
+        self.assertNotIn("hunter2", " ".join(self.lines))
 
     def test_log_line_has_method_path_status_and_auth_only(self):
         self.lines.clear()
