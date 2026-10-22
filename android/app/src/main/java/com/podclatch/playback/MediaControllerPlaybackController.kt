@@ -83,10 +83,14 @@ class MediaControllerPlaybackController @Inject constructor(
         val future = MediaController.Builder(context, token)
             .setListener(object : MediaController.Listener {
                 override fun onDisconnected(controller: MediaController) {
+                    // The session ended (task removed while paused, or the service died). Release the
+                    // binding so the service can be destroyed; the next play connects again.
                     if (this@MediaControllerPlaybackController.controller === controller) {
                         this@MediaControllerPlaybackController.controller = null
                         _state.value = PlaybackUiState()
                     }
+                    controller.removeListener(playerListener)
+                    controller.release()
                 }
             })
             .buildAsync()

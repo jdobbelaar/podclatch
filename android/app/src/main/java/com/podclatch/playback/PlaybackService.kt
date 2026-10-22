@@ -70,6 +70,19 @@ class PlaybackService : MediaLibraryService() {
                 .setChannelName(R.string.playback_channel_name)
                 .build(),
         )
+        ensureSession()
+        scope.launch {
+            settings.settings.map { it.skipBackSec to it.skipForwardSec }.distinctUntilChanged().collect { (back, forward) ->
+                skipBackSec = back
+                skipForwardSec = forward
+                session?.setMediaButtonPreferences(skipButtons())
+            }
+        }
+    }
+
+    /** Builds the player and the session if there are none (again after the task-removal teardown). */
+    private fun ensureSession(): MediaLibrarySession {
+        session?.let { return it }
         val exo = buildPlayer()
         player = exo
         exo.addListener(object : Player.Listener {
@@ -79,35 +92,40 @@ class PlaybackService : MediaLibraryService() {
             }
         })
         val wrapped = SkipForwardingPlayer(exo, { skipBackSec * 1000L }, { skipForwardSec * 1000L })
-        val newSession = MediaLibrarySession.Builder(this, wrapped, LibraryCallback())
+        return MediaLibrarySession.Builder(this, wrapped, LibraryCallback())
             .setSessionActivity(sessionActivity())
             .setMediaButtonPreferences(skipButtons())
             .build()
-        session = newSession
-        scope.launch {
-            settings.settings.map { it.skipBackSec to it.skipForwardSec }.distinctUntilChanged().collect { (back, forward) ->
-                skipBackSec = back
-                skipForwardSec = forward
-                newSession.setMediaButtonPreferences(skipButtons())
-            }
-        }
+            .also { session = it }
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
+    /**
+     * Releasing the session is what ends the notification and tells every bound controller (the app's own
+     * included) that the session is gone, so each can drop its binding. `stopSelf()` alone does not
+     * destroy a service that still has a client bound.
+     */
+    private fun releaseSession() {
+        session?.release()
+        session = null
+        player?.release()
+        player = null
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = ensureSession()
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val exo = player
         val playing = exo != null && exo.playWhenReady &&
             (exo.playbackState == Player.STATE_READY || exo.playbackState == Player.STATE_BUFFERING)
-        if (shouldStopOnTaskRemoved(playing)) pauseAllPlayersAndStopSelf()
+        if (shouldStopOnTaskRemoved(playing)) {
+            pauseAllPlayersAndStopSelf()
+            releaseSession()
+        }
     }
 
     override fun onDestroy() {
         scope.cancel()
-        session?.release()
-        session = null
-        player?.release()
-        player = null
+        releaseSession()
         super.onDestroy()
     }
 

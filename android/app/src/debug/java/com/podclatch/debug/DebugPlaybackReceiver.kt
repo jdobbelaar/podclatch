@@ -23,6 +23,9 @@ import kotlinx.coroutines.launch
 interface DebugEntryPoint {
     fun playback(): PlaybackController
     fun settings(): SettingsRepository
+
+    /** For the instrumented tests that run the real service against the real store. */
+    fun store(): com.podclatch.data.db.CacheStore
 }
 
 /**
