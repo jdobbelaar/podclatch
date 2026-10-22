@@ -8,6 +8,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import android.util.Log
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.annotation.OptIn
@@ -26,8 +27,13 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.podclatch.Config
 import com.podclatch.MainActivity
 import com.podclatch.R
+import com.podclatch.data.db.CacheStore
+import com.podclatch.data.repo.EpisodeStateRepository
 import com.podclatch.data.repo.SettingsRepository
+import com.podclatch.di.ApplicationScope
 import com.podclatch.domain.PlaybackSpeedUseCase
+import com.podclatch.domain.SyncEngine
+import com.podclatch.domain.SyncTrigger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +41,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
@@ -56,11 +64,17 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var appClient: OkHttpClient
     @Inject lateinit var speed: PlaybackSpeedUseCase
+    @Inject lateinit var store: CacheStore
+    @Inject lateinit var stateRepository: EpisodeStateRepository
+    @Inject lateinit var syncEngine: SyncEngine
+    @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var session: MediaLibrarySession? = null
     private var player: ExoPlayer? = null
     private var speedJob: Job? = null
+    private var recorder: ProgressRecorder? = null
+    private var watcher: ExternalChangeWatcher? = null
 
     @Volatile private var skipBackSec = Config.DEFAULT_SKIP_BACK_SEC
 
@@ -98,6 +112,7 @@ class PlaybackService : MediaLibraryService() {
                 exo.playWhenReady = false
             }
         })
+        attachProgress(exo)
         val wrapped = SkipForwardingPlayer(exo, { skipBackSec * 1000L }, { skipForwardSec * 1000L })
         return MediaLibrarySession.Builder(this, wrapped, LibraryCallback())
             .setSessionActivity(sessionActivity())
@@ -114,11 +129,89 @@ class PlaybackService : MediaLibraryService() {
     private fun releaseSession() {
         speedJob?.cancel()
         speedJob = null
+        player?.let { exo ->
+            // The last position is saved, then the recorder takes no more events (queued writes still run).
+            if (recordsPlayerEvents(exo.currentMediaItem != null, exo.playerError != null)) recorder?.onStop(exo.currentPosition, durationOf(exo))
+        }
+        recorder?.close()
+        recorder = null
+        watcher?.onLoaded(null)
+        watcher = null
         session?.release()
         session = null
         player?.release()
         player = null
     }
+
+    /**
+     * Attaches position saving, the Played rules, and the "state changed under the player" rule to the
+     * player. They run on the application scope (they must outlive the UI); only the reads of the player
+     * and the stop-and-clear run on the main thread.
+     */
+    private fun attachProgress(exo: ExoPlayer) {
+        val progress = ProgressRecorder(
+            scope = appScope,
+            repository = stateRepository,
+            source = { withContext(Dispatchers.Main.immediate) { snapshotOf(exo) } },
+            fallbackDurationSec = { id -> store.episodeForPlayback(id)?.durationSec },
+            sync = { syncEngine.sync(SyncTrigger.MANUAL) },
+            onFinished = { stopAndClear(exo) },
+            onError = { Log.w(TAG, "Saving playback progress failed: ${it.javaClass.simpleName}") },
+        )
+        recorder = progress
+        val changes = ExternalChangeWatcher(
+            scope = appScope,
+            observe = store::observeEpisode,
+            isOwnStamp = progress::isOwnStamp,
+            onExternalChange = {
+                progress.detach()
+                stopAndClear(exo)
+            },
+        )
+        watcher = changes
+        exo.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val id = mediaItem?.mediaId?.toLongOrNull()
+                progress.onLoaded(id)
+                changes.onLoaded(id)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) = progress.onPlaying(isPlaying)
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // Pause is playWhenReady turning off (a buffering stall is not); an error never counts.
+                if (!playWhenReady && recordsPlayerEvents(exo.currentMediaItem != null, exo.playerError != null)) {
+                    progress.onPause(exo.currentPosition, durationOf(exo))
+                }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (!recordsPlayerEvents(exo.currentMediaItem != null, exo.playerError != null)) return
+                when (playbackState) {
+                    Player.STATE_ENDED -> progress.onEnded(durationOf(exo), exo.currentPosition)
+                    Player.STATE_IDLE -> progress.onStop(exo.currentPosition, durationOf(exo))
+                }
+            }
+        })
+    }
+
+    /** Stops the player and empties it, so the notification, the mini player, and the foreground state go. */
+    private fun stopAndClear(exo: ExoPlayer) {
+        scope.launch(Dispatchers.Main.immediate) {
+            if (player === exo) {
+                exo.stop()
+                exo.clearMediaItems()
+            }
+        }
+    }
+
+    private fun snapshotOf(exo: ExoPlayer): PlaybackSnapshot? = try {
+        PlaybackSnapshot(exo.currentMediaItem?.mediaId?.toLongOrNull(), exo.currentPosition, durationOf(exo))
+    } catch (_: IllegalStateException) {
+        null
+    }
+
+    private fun durationOf(exo: ExoPlayer): Long? = exo.duration.takeIf { it != C.TIME_UNSET && it > 0 }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = ensureSession()
 
@@ -223,6 +316,44 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<MutableList<MediaItem>> = scope.future {
             mediaItems.map { item -> resolveItem(item) ?: throw IllegalArgumentException("Unknown episode") }.toMutableList()
         }
+
+        /** Starts a New Episode at its saved position (any other start stays at 0) and records the Episode left. */
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+            val resolved = mediaItems.map { item -> resolveItem(item) ?: throw IllegalArgumentException("Unknown episode") }
+            var index = startIndex
+            var position = startPositionMs
+            if (resolved.isNotEmpty() && startPositionMs == C.TIME_UNSET) {
+                val first = if (startIndex == C.INDEX_UNSET) 0 else startIndex
+                val start = startPositionFor(resolved[first].mediaId.toLong())
+                if (start > 0) {
+                    index = first
+                    position = start
+                }
+            }
+            noteSwitchFrom(resolved.firstOrNull()?.mediaId)
+            MediaSession.MediaItemsWithStartPosition(resolved, index, position)
+        }
+    }
+
+    /** The loaded Episode is about to be replaced by [newMediaId]: record it at the position it was left at. */
+    private fun noteSwitchFrom(newMediaId: String?) {
+        val exo = player ?: return
+        val previous = exo.currentMediaItem?.mediaId ?: return
+        if (previous == newMediaId) return
+        val id = previous.toLongOrNull() ?: return
+        recorder?.onSwitch(id, exo.currentPosition, durationOf(exo))
+    }
+
+    private suspend fun startPositionFor(episodeId: Long): Long {
+        val progress = store.observeEpisode(episodeId).first() ?: return 0L
+        val durationSec = store.episodeForPlayback(episodeId)?.durationSec
+        return startPositionMs(progress.status, progress.positionSec, effectiveDurationMs(null, durationSec))
     }
 
     private suspend fun resolveItem(item: MediaItem): MediaItem? {
@@ -249,3 +380,5 @@ internal fun mediaItemOf(resolved: ResolvedEpisode): MediaItem {
         .build()
     return MediaItem.Builder().setMediaId(resolved.mediaId).setUri(uri).setMediaMetadata(metadata).build()
 }
+
+private const val TAG = "PlaybackService"

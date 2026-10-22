@@ -90,4 +90,10 @@ object Config {
 
     /** The full player and the mini player read the playback position this often. */
     const val PLAYER_POSITION_POLL_MS = 500L
+
+    /** While an Episode plays, its position is saved this often (playing time, not wall time). */
+    const val POSITION_SAVE_INTERVAL_MS = 5_000L
+
+    /** Pausing, stopping, or switching at or beyond this percent of the duration marks the Episode Played. */
+    const val PLAYED_THRESHOLD_PERCENT = 95
 }
