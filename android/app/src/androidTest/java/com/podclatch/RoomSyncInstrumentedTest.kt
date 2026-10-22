@@ -376,6 +376,10 @@ private class MemorySettings : SettingsRepository {
     override suspend fun setSkipIntervals(backSec: Int, forwardSec: Int) {
         flow.value = flow.value.copy(skipBackSec = backSec, skipForwardSec = forwardSec)
     }
+
+    override suspend fun toggleSpeedMode() = Unit
+
+    override suspend fun assignSpeed(speed: Float?) = Unit
 }
 
 private class ScriptedApi : PodClatchApi {

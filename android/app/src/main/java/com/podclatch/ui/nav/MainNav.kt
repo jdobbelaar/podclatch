@@ -24,7 +24,13 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.podclatch.R
 import com.podclatch.ui.QueuePlaceholderScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.Column
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.podclatch.ui.feeddetail.FeedDetailScreen
+import com.podclatch.ui.player.MiniPlayer
+import com.podclatch.ui.player.PlayerScreen
+import com.podclatch.ui.player.PlayerViewModel
+import com.podclatch.ui.player.miniPlayerVisible
 import com.podclatch.ui.feeds.FeedsScreen
 import com.podclatch.ui.subscribe.SUBSCRIBE_OUTCOME_KEY
 import com.podclatch.ui.subscribe.SubscribeOutcome
@@ -38,11 +44,19 @@ import com.podclatch.ui.subscribe.SubscribeScreen
 @Composable
 fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
     val entry by navController.currentBackStackEntryAsState()
-    val selected = tabForRoute(entry?.destination?.route)
+    val route = entry?.destination?.route
+    val selected = tabForRoute(route)
+    val player: PlayerViewModel = hiltViewModel()
+    val playback by player.playbackState.collectAsStateWithLifecycle()
+    val showMini = miniPlayerVisible(playback) && !isPlayerRoute(route)
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         bottomBar = {
-            if (selected != null) {
+            Column {
+                if (showMini) {
+                    MiniPlayer(player, onOpenPlayer = { navController.navigate(Player) { launchSingleTop = true } })
+                }
+                if (selected != null) {
                 NavigationBar {
                     NavigationBarItem(
                         selected = selected == Tab.QUEUE,
@@ -58,6 +72,7 @@ fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
                         label = { Text(stringResource(R.string.tab_feeds)) },
                         modifier = Modifier.testTag("tab_feeds"),
                     )
+                }
                 }
             }
         },
@@ -87,6 +102,7 @@ fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
                 )
             }
             composable<FeedDetail> { FeedDetailScreen(onBack = { navController.popBackStack() }) }
+            composable<Player> { PlayerScreen(onClose = { navController.popBackStack() }) }
         }
     }
 }
