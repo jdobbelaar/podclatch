@@ -33,17 +33,33 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.podclatch.R
 
 /**
- * The top bar of a tab: its title and a "More options" menu. "Connection settings" is a temporary
- * stand-in for the Settings screen (US-17), so the connection screen stays reachable.
+ * The top bar of a tab: its title (with an optional [subtitle] line under it), the tab's own [actions], and a
+ * "More options" menu. "Connection settings" is a temporary stand-in for the Settings screen (US-17), so
+ * the connection screen stays reachable.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TabTopBar(title: String, onOpenConnection: () -> Unit) {
+fun TabTopBar(
+    title: String,
+    onOpenConnection: () -> Unit,
+    subtitle: (@Composable () -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     var expanded by remember { mutableStateOf(false) }
     TopAppBar(
-        title = { Text(title) },
+        title = {
+            if (subtitle == null) {
+                Text(title)
+            } else {
+                Column {
+                    Text(title)
+                    subtitle()
+                }
+            }
+        },
         windowInsets = WindowInsets(0),
         actions = {
+            actions()
             IconButton(onClick = { expanded = true }, modifier = Modifier.testTag("overflow_menu")) {
                 Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options))
             }
@@ -75,25 +91,4 @@ fun BackTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScope.
             }
         },
     )
-}
-
-/** The Queue tab until US-13: the Sync line and button that QA uses to force a Sync. */
-@Composable
-fun QueuePlaceholderScreen(onOpenConnection: () -> Unit, vm: QueueViewModel = hiltViewModel()) {
-    val sync by vm.sync.collectAsStateWithLifecycle()
-    Scaffold(
-        topBar = { TabTopBar(stringResource(R.string.tab_queue), onOpenConnection) },
-        contentWindowInsets = WindowInsets(0),
-    ) { padding ->
-        Column(
-            Modifier.padding(padding).fillMaxSize().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(stringResource(R.string.queue_placeholder), modifier = Modifier.testTag("queue_placeholder"))
-            Text(syncStatusText(sync), modifier = Modifier.testTag("sync_status"))
-            Button(onClick = vm::syncNow, modifier = Modifier.testTag("sync_now")) {
-                Text(stringResource(R.string.sync_now))
-            }
-        }
-    }
 }

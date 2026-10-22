@@ -169,16 +169,7 @@ class FeedsController @Inject constructor(
 
     private suspend fun runRefresh() {
         val titles = latest.value.orEmpty().associate { it.id to it.title }
-        val message: FeedsMessage? = try {
-            when (val result = repo.refreshAll()) {
-                is FeedsResult.Ok -> buildRefreshMessage(result.value.results, result.value.sync, titles)
-                is FeedsResult.Failed -> failureMessage(result.error) { FeedsMessage.RefreshFailed(it) }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            FeedsMessage.Unexpected
-        }
+        val message = refreshAllFeeds(repo, titles)
         local.update { it.copy(busy = false, refreshing = false, message = message) }
     }
 

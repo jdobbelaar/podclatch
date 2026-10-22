@@ -12,6 +12,7 @@ import com.podclatch.domain.TokenRejection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import com.podclatch.playback.ExternalChange
 import com.podclatch.playback.ExternalChangeWatcher
 import com.podclatch.playback.PlaybackSnapshot
 import com.podclatch.playback.ProgressRecorder
@@ -42,6 +43,8 @@ class ProgressRecorderTest {
         var snapshots = 0
         val syncs = AtomicInteger()
         val finished = AtomicInteger()
+        val finishedIds = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        var statusWhenFinished: EpisodeStatus? = null
         var durationSec: Int? = null
         val errors = mutableListOf<Throwable>()
 
@@ -51,7 +54,11 @@ class ProgressRecorderTest {
             source = { snapshots++; PlaybackSnapshot(loadedId, positionMs, playerDurationMs) },
             fallbackDurationSec = { durationSec },
             sync = { syncs.incrementAndGet() },
-            onFinished = { finished.incrementAndGet() },
+            onFinished = { id ->
+                finishedIds += id
+                statusWhenFinished = store.episodes[id]?.status
+                finished.incrementAndGet()
+            },
             onError = { errors += it },
         )
 
@@ -395,12 +402,14 @@ class ProgressRecorderTest {
 
     private class Watched(val e: Env, scope: CoroutineScope) {
         val external = AtomicInteger()
+        val changes = java.util.Collections.synchronizedList(mutableListOf<ExternalChange>())
         val watcher = ExternalChangeWatcher(
             scope = scope,
             observe = e.store::observeEpisode,
             isOwnStamp = e.recorder::isOwnStamp,
-            onExternalChange = {
+            onExternalChange = { change ->
                 e.recorder.detach()
+                changes += change
                 external.incrementAndGet()
             },
         )
@@ -502,6 +511,59 @@ class ProgressRecorderTest {
         }
         e.advance(0)
         assertEquals(1, w.external.get())
+    }
+
+    @Test
+    fun theWatcherTellsWhichEpisodeAndItsNewStateSoThePlayedMarkCanAdvance() = runTest {
+        val w = watched()
+        w.e.repo.markPlayed(10)
+        w.e.advance(0)
+        val change = w.changes.single()
+        assertEquals(10L, change.episodeId)
+        assertEquals(EpisodeStatus.PLAYED, change.progress!!.status)
+    }
+
+    @Test
+    fun aMarkNewReportsANewEpisodeAndAnUnsubscribeReportsNone() = runTest {
+        val w = watched()
+        w.e.repo.markNew(10)
+        w.e.advance(0)
+        assertEquals(EpisodeStatus.NEW, w.changes.single().progress!!.status)
+
+        val gone = watched()
+        gone.e.store.transaction { deleteFeed(1) }
+        gone.e.advance(0)
+        assertNull(gone.changes.single().progress)
+    }
+
+    @Test
+    fun theEndHandsTheEpisodeToTheAdvanceAfterItIsMarkedPlayed() = runTest {
+        val e = env(this)
+        e.seed(positionSec = 3)
+        e.recorder.onLoaded(10)
+        e.recorder.onEnded(60_000, 60_000)
+        e.advance(0)
+        assertEquals(listOf(10L), e.finishedIds.toList())
+        assertEquals("already Played when the advance starts", EpisodeStatus.PLAYED, e.statusWhenFinished)
+    }
+
+    @Test
+    fun stoppingOrSwitchingAtNinetyFivePercentMarksPlayedButNeverAdvances() = runTest {
+        val e = env(this)
+        e.seed()
+        e.recorder.onLoaded(10)
+        e.recorder.onSwitch(10, 96_000, 100_000)
+        e.advance(0)
+        assertEquals(EpisodeStatus.PLAYED, e.episode.status)
+        assertEquals(0, e.finished.get())
+
+        val f = env(this)
+        f.seed()
+        f.recorder.onLoaded(10)
+        f.recorder.onStop(99_000, 100_000)
+        f.advance(0)
+        assertEquals(EpisodeStatus.PLAYED, f.episode.status)
+        assertEquals(0, f.finished.get())
     }
 
     // ---- on real threads (the shape the service uses: the application scope on a background dispatcher) ----

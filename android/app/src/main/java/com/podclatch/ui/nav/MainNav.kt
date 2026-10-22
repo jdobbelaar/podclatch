@@ -22,7 +22,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.podclatch.R
-import com.podclatch.ui.QueuePlaceholderScreen
+import com.podclatch.ui.queue.QueueScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -78,7 +78,7 @@ fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
         },
     ) { padding ->
         NavHost(navController, startDestination = Queue, modifier = Modifier.padding(padding)) {
-            composable<Queue> { QueuePlaceholderScreen(onOpenConnection) }
+            composable<Queue> { QueueScreen(onOpenConnection) }
             composable<Feeds> { feedsEntry ->
                 // The Subscribe view leaves its outcome here before it pops; Feeds reads it once.
                 val handle = feedsEntry.savedStateHandle
