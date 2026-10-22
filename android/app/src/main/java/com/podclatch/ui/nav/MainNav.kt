@@ -22,9 +22,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.podclatch.R
-import com.podclatch.ui.FeedDetailPlaceholderScreen
 import com.podclatch.ui.QueuePlaceholderScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.podclatch.ui.feeddetail.FeedDetailScreen
 import com.podclatch.ui.feeds.FeedsScreen
 import com.podclatch.ui.subscribe.SUBSCRIBE_OUTCOME_KEY
 import com.podclatch.ui.subscribe.SubscribeOutcome
@@ -86,7 +86,7 @@ fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
                     },
                 )
             }
-            composable<FeedDetail> { FeedDetailPlaceholderScreen(onBack = { navController.popBackStack() }) }
+            composable<FeedDetail> { FeedDetailScreen(onBack = { navController.popBackStack() }) }
         }
     }
 }

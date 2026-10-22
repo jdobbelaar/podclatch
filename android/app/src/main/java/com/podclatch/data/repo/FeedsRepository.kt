@@ -1,7 +1,10 @@
 package com.podclatch.data.repo
 
 import com.podclatch.data.db.CacheStore
+import com.podclatch.data.db.Feed
+import com.podclatch.data.db.FeedEpisode
 import com.podclatch.data.db.FeedListItem
+import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.network.ApiError
 import com.podclatch.data.network.ApiException
 import com.podclatch.data.network.PodClatchApi
@@ -74,6 +77,50 @@ class FeedsRepository @Inject constructor(
         }
         return FeedsResult.Ok(engine.sync(SyncTrigger.MANUAL))
     }
+
+    /** One Feed from the Room cache for Feed Detail; null when it is not (or no longer) cached. */
+    fun observeFeed(feedId: Long): Flow<Feed?> = store.observeFeed(feedId)
+
+    /** The Feed's Episodes from the Room cache, newest first; Listen Order is applied by the screen. */
+    fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>> = store.observeEpisodes(feedId)
+
+    /**
+     * Sends the new Listen Order for a Feed. On success the returned Feed is written to Room under the
+     * Sync lock (so a running pull cannot overwrite it), then a Sync runs; the value is that Sync's
+     * result, whose failure is not a Listen Order failure. On failure nothing in Room changes, except
+     * that a 404 (the Feed is gone on the server) is followed by a Sync so the Feed leaves the cache.
+     */
+    suspend fun updateListenOrder(feedId: Long, listenOrder: ListenOrder): FeedsResult<SyncResult> {
+        val feed = when (val r = call { api.updateFeedListenOrder(feedId, listenOrder) }) {
+            is FeedsResult.Ok -> r.value
+            is FeedsResult.Failed -> {
+                if (r.isNotFound()) engine.sync(SyncTrigger.MANUAL)
+                return r
+            }
+        }
+        engine.exclusive {
+            store.transaction { if (feedExists(feed.id)) updateFeedSynced(feed.toFeed()) }
+        }
+        return FeedsResult.Ok(engine.sync(SyncTrigger.MANUAL))
+    }
+
+    /**
+     * Refreshes one Feed on the server, then always syncs (the Feed may have new Episodes even when
+     * its result says it failed). If the call itself fails, no Sync runs, except after a 404 so the Feed
+     * leaves the cache.
+     */
+    suspend fun refreshFeed(feedId: Long): FeedsResult<RefreshOutcome> {
+        val results = when (val r = call { api.refreshFeed(feedId) }) {
+            is FeedsResult.Ok -> r.value
+            is FeedsResult.Failed -> {
+                if (r.isNotFound()) engine.sync(SyncTrigger.MANUAL)
+                return r
+            }
+        }
+        return FeedsResult.Ok(RefreshOutcome(results, engine.sync(SyncTrigger.MANUAL)))
+    }
+
+    private fun FeedsResult.Failed.isNotFound() = (error as? ApiError.Http)?.code == 404
 
     /**
      * Refreshes every Feed on the server, then always syncs (some Feeds may have new Episodes even if

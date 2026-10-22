@@ -1,6 +1,7 @@
 package com.podclatch.data.network
 
 import com.podclatch.Config
+import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.repo.SettingsRepository
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerializationException
@@ -99,6 +100,25 @@ class OkHttpPodClatchApi @Inject constructor(
         val url = resolved.url("/v1/search").newBuilder().addQueryParameter("q", q).build()
         val body = execute(resolved, Request.Builder().url(url), authenticated = true)
         return decode(body, ListSerializer(SearchResultDto.serializer()))
+    }
+
+    override suspend fun updateFeedListenOrder(feedId: Long, listenOrder: ListenOrder): FeedDto {
+        val resolved = resolve(null)
+        val payload = json.encodeToString(UpdateFeedRequest.serializer(), UpdateFeedRequest(listenOrder))
+        val request = Request.Builder()
+            .url(resolved.url("/v1/feeds/$feedId"))
+            .patch(payload.toRequestBody(JSON_MEDIA_TYPE))
+        val body = execute(resolved, request, authenticated = true)
+        return decode(body, FeedDto.serializer())
+    }
+
+    override suspend fun refreshFeed(feedId: Long): List<RefreshResultDto> {
+        val resolved = resolve(null)
+        val request = Request.Builder()
+            .url(resolved.url("/v1/feeds/$feedId/refresh"))
+            .post("".toRequestBody(null))
+        val body = execute(resolved, request, authenticated = true)
+        return decode(body, ListSerializer(RefreshResultDto.serializer()))
     }
 
     override suspend fun refreshAllFeeds(): List<RefreshResultDto> {

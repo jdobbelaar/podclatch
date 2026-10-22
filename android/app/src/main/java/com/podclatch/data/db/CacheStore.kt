@@ -24,6 +24,12 @@ interface CacheStore {
     /** Feeds in server order (priority, then id) with their unplayed counts; emits only on a visible change. */
     fun observeFeedList(): Flow<List<FeedListItem>>
 
+    /** One Feed; emits null when it is not cached (also right after it was removed). */
+    fun observeFeed(id: Long): Flow<Feed?>
+
+    /** The Feed's Episodes, newest first (`publishedAt`, then `id`, descending); emits on any change to them. */
+    fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>>
+
     suspend fun pendingWrites(): List<PendingStateWrite>
     suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String>
     suspend fun localPathsOfFeeds(feedIds: Collection<Long>): List<String>
@@ -36,6 +42,9 @@ interface CacheStore {
 interface CacheTransaction {
     suspend fun feedExists(id: Long): Boolean
     suspend fun getEpisode(id: Long): Episode?
+
+    /** Every Episode of the Feed (order not defined). */
+    suspend fun episodesOfFeed(feedId: Long): List<Episode>
     suspend fun allPending(): List<PendingStateWrite>
     suspend fun getPending(episodeId: Long): PendingStateWrite?
 
@@ -78,6 +87,10 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
     override fun episodeCount(): Flow<Int> = episodes.count()
     override fun feedUrls(): Flow<List<String>> = feeds.feedUrls()
     override fun observeFeedList(): Flow<List<FeedListItem>> = feeds.observeFeedList().distinctUntilChanged()
+    override fun observeFeed(id: Long): Flow<Feed?> = feeds.observeFeed(id).distinctUntilChanged()
+    override fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>> =
+        episodes.observeEpisodes(feedId).distinctUntilChanged()
+
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.getAll()
 
     override suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String> =
@@ -93,6 +106,7 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
     private inner class RoomTransaction : CacheTransaction {
         override suspend fun feedExists(id: Long) = feeds.exists(id)
         override suspend fun getEpisode(id: Long) = episodes.getById(id)
+        override suspend fun episodesOfFeed(feedId: Long) = episodes.episodesOfFeed(feedId)
         override suspend fun allPending() = pending.getAll()
         override suspend fun getPending(episodeId: Long) = pending.getById(episodeId)
 

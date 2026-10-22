@@ -38,6 +38,12 @@ object Config {
     /** A left swipe on a Feed bar past this fraction of its width asks to unsubscribe. */
     const val SWIPE_UNSUBSCRIBE_FRACTION = 0.4f
 
+    /** A swipe on an Episode row past this fraction of its width marks it Played (left) or New (right). */
+    const val SWIPE_EPISODE_FRACTION = 0.4f
+
+    /** A Feed description longer than this many lines is collapsed behind "Show more". */
+    const val DESCRIPTION_COLLAPSED_LINES = 4
+
     /** Most failed Feeds listed by name in the Refresh error message. */
     const val MAX_REFRESH_ERROR_LINES = 3
 

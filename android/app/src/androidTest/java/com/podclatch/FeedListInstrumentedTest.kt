@@ -11,6 +11,7 @@ import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.db.PodClatchDatabase
 import com.podclatch.data.db.RoomCacheStore
 import com.podclatch.data.repo.EpisodeStateRepository
+import com.podclatch.data.repo.MarkResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList

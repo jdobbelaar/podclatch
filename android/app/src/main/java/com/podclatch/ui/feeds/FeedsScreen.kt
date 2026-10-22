@@ -1,6 +1,5 @@
 package com.podclatch.ui.feeds
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -49,11 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.painter.ColorPainter
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -71,6 +68,7 @@ import com.podclatch.Config
 import com.podclatch.R
 import com.podclatch.data.db.FeedListItem
 import com.podclatch.ui.TabTopBar
+import com.podclatch.ui.common.PullRefreshBox
 import com.podclatch.ui.subscribe.SubscribeOutcome
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
@@ -190,60 +188,6 @@ private fun displayTitle(title: String): String = title.ifBlank { stringResource
 
 // ---- The list, the big swipe, and the drag ----
 
-/**
- * Tracks the part of a downward drag that the list cannot scroll itself (the list is at the top) as the
- * pull distance, in raw pixels. Release hands the distance to [onRelease] and swallows the fling.
- */
-private class PullConnection(
-    private val enabled: () -> Boolean,
-    private val onPull: (Float) -> Unit,
-    private val onRelease: (Float) -> Unit,
-) : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-    private var pull = 0f
-
-    private fun set(value: Float) {
-        pull = value
-        onPull(value)
-    }
-
-    override fun onPreScroll(
-        available: androidx.compose.ui.geometry.Offset,
-        source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
-    ): androidx.compose.ui.geometry.Offset {
-        if (!enabled()) {
-            if (pull != 0f) set(0f)
-            return androidx.compose.ui.geometry.Offset.Zero
-        }
-        if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y < 0f && pull > 0f) {
-            val used = minOf(pull, -available.y)
-            set(pull - used)
-            return androidx.compose.ui.geometry.Offset(0f, -used)
-        }
-        return androidx.compose.ui.geometry.Offset.Zero
-    }
-
-    override fun onPostScroll(
-        consumed: androidx.compose.ui.geometry.Offset,
-        available: androidx.compose.ui.geometry.Offset,
-        source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
-    ): androidx.compose.ui.geometry.Offset {
-        if (enabled() && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y > 0f) {
-            set(pull + available.y)
-            return androidx.compose.ui.geometry.Offset(0f, available.y)
-        }
-        return androidx.compose.ui.geometry.Offset.Zero
-    }
-
-    override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-        if (pull <= 0f) return androidx.compose.ui.unit.Velocity.Zero
-        val released = pull
-        set(0f)
-        onRelease(released)
-        // The whole fling is swallowed: a downward fling after release scrolls and triggers nothing.
-        return available
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FeedsList(
@@ -256,19 +200,7 @@ private fun FeedsList(
     onRequestUnsubscribe: (Long) -> Unit,
     scrollToTopRequests: Int,
 ) {
-    val screenHeight = LocalWindowInfo.current.containerSize.height
-    var pull by remember { mutableFloatStateOf(0f) }
     val locked = state.gesturesLocked
-    val currentLocked by rememberUpdatedState(locked)
-    val currentOnRefresh by rememberUpdatedState(onRefresh)
-    val currentScreenHeight by rememberUpdatedState(screenHeight)
-    val connection = remember {
-        PullConnection(
-            enabled = { !currentLocked },
-            onPull = { pull = it },
-            onRelease = { released -> if (shouldRefresh(released, currentScreenHeight)) currentOnRefresh() },
-        )
-    }
 
     val listState = rememberLazyListState()
     LaunchedEffect(scrollToTopRequests) {
@@ -279,7 +211,7 @@ private fun FeedsList(
     }
     val items = state.items.orEmpty()
 
-    Box(Modifier.fillMaxSize().nestedScroll(connection)) {
+    PullRefreshBox(locked = locked, refreshing = state.refreshing, onRefresh = { onRefresh() }) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -317,12 +249,6 @@ private fun FeedsList(
                 }
             }
         }
-        RefreshIndicator(
-            pull = pull,
-            refreshing = state.refreshing,
-            screenHeight = screenHeight,
-            modifier = Modifier.align(Alignment.TopCenter),
-        )
     }
 }
 
@@ -339,32 +265,6 @@ private fun EmptyState(modifier: Modifier, loaded: Boolean, syncing: Boolean) {
                 Text(stringResource(R.string.feeds_syncing), modifier = Modifier.testTag("feeds_syncing"))
             }
             else -> Text(stringResource(R.string.feeds_empty), modifier = Modifier.testTag("feeds_empty"))
-        }
-    }
-}
-
-@Composable
-private fun RefreshIndicator(pull: Float, refreshing: Boolean, screenHeight: Int, modifier: Modifier) {
-    val progress = pullProgress(pull, screenHeight)
-    val description = when {
-        refreshing -> stringResource(R.string.refresh_refreshing)
-        shouldRefresh(pull, screenHeight) -> stringResource(R.string.refresh_release)
-        else -> stringResource(R.string.refresh_pulling, pullPercent(pull, screenHeight))
-    }
-    AnimatedVisibility(visible = pull > 0f || refreshing, modifier = modifier.padding(top = 8.dp)) {
-        Surface(
-            shape = CircleShape,
-            shadowElevation = 4.dp,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.semantics { contentDescription = description }.testTag("refresh_indicator"),
-        ) {
-            Box(Modifier.padding(8.dp)) {
-                if (refreshing) {
-                    CircularProgressIndicator(Modifier.size(32.dp))
-                } else {
-                    CircularProgressIndicator(progress = { progress }, modifier = Modifier.size(32.dp))
-                }
-            }
         }
     }
 }

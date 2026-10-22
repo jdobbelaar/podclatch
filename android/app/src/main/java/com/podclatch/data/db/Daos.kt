@@ -49,6 +49,10 @@ interface FeedDao {
     @Query("SELECT feedUrl FROM feed")
     fun feedUrls(): Flow<List<String>>
 
+    /** One Feed for Feed Detail; emits null when it is not (or no longer) cached. */
+    @Query("SELECT * FROM feed WHERE id = :id")
+    fun observeFeed(id: Long): Flow<Feed?>
+
     /** The Feeds tab: per Feed the count of NEW Episodes (downloaded or not), in server order. */
     @Query(
         "SELECT f.id AS id, f.title AS title, f.author AS author, f.artworkUrl AS artworkUrl, " +
@@ -102,6 +106,20 @@ interface EpisodeDao {
             "FROM episode e INNER JOIN feed f ON f.id = e.feedId WHERE e.id = :id",
     )
     suspend fun episodeForPlayback(id: Long): PlaybackEpisode?
+
+    /**
+     * Feed Detail's rows, newest first (`publishedAt`, then `id`, descending). Oldest first is the exact
+     * reverse, applied by the screen's logic. Emits again whenever any of the rows changes.
+     */
+    @Query(
+        "SELECT id, title, publishedAt, durationSec, status, positionSec FROM episode " +
+            "WHERE feedId = :feedId ORDER BY publishedAt DESC, id DESC",
+    )
+    fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>>
+
+    /** Every Episode of the Feed, for Mark all. */
+    @Query("SELECT * FROM episode WHERE feedId = :feedId ORDER BY id")
+    suspend fun episodesOfFeed(feedId: Long): List<Episode>
 
     @Query("DELETE FROM episode WHERE id = :id")
     suspend fun deleteById(id: Long)

@@ -2,6 +2,7 @@ package com.podclatch.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -25,13 +26,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.podclatch.R
-import com.podclatch.ui.feeds.FeedDetailViewModel
-import com.podclatch.ui.feeds.shouldPopFeedDetail
-import androidx.compose.runtime.LaunchedEffect
 
 /**
  * The top bar of a tab: its title and a "More options" menu. "Connection settings" is a temporary
@@ -65,10 +64,11 @@ fun TabTopBar(title: String, onOpenConnection: () -> Unit) {
 /** The top bar of a full-screen destination, with a Back control that does what system Back does. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BackTopBar(title: String, onBack: () -> Unit) {
+fun BackTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
     TopAppBar(
-        title = { Text(title) },
+        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         windowInsets = WindowInsets(0),
+        actions = actions,
         navigationIcon = {
             IconButton(onClick = onBack, modifier = Modifier.testTag("nav_back")) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -94,28 +94,6 @@ fun QueuePlaceholderScreen(onOpenConnection: () -> Unit, vm: QueueViewModel = hi
             Button(onClick = vm::syncNow, modifier = Modifier.testTag("sync_now")) {
                 Text(stringResource(R.string.sync_now))
             }
-        }
-    }
-}
-
-/** The Feed Detail destination until the Feed Detail story replaces it; pops itself if the Feed is not in the cache. */
-@Composable
-fun FeedDetailPlaceholderScreen(onBack: () -> Unit, vm: FeedDetailViewModel = hiltViewModel()) {
-    val items by vm.items.collectAsStateWithLifecycle()
-    val pop = shouldPopFeedDetail(items, vm.feedId)
-    LaunchedEffect(pop) { if (pop) onBack() }
-    val title = items?.firstOrNull { it.id == vm.feedId }?.title?.ifBlank { null }
-        ?: stringResource(R.string.feed_untitled)
-    Scaffold(
-        topBar = { BackTopBar(title, onBack) },
-        contentWindowInsets = WindowInsets(0),
-    ) { padding ->
-        Column(
-            Modifier.padding(padding).fillMaxSize().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(title, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("feed_detail_title"))
-            Text(stringResource(R.string.feed_detail_placeholder), modifier = Modifier.testTag("feed_detail_placeholder"))
         }
     }
 }
