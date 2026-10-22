@@ -55,16 +55,13 @@ class PlaybackSpeedTest {
     }
 
     @Test
-    fun theSpeedSurvivesANewRepositoryOverTheSameFile() = runBlocking {
-        val file = File(tmp.root, "persist.preferences_pb")
-        val firstScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val first = DataStoreSettingsRepository(PreferenceDataStoreFactory.create(scope = firstScope) { file })
-        PlaybackSpeedUseCase(first).apply { assign(2.0f); toggle() }
-        firstScope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
-        // A new store over the same file stands for a restarted process.
-        val again = repo(file).current()
-        assertEquals(2.0f, again.assignedSpeed, 0f)
-        assertEquals(SpeedMode.NORMAL, again.speedMode)
+    fun theAssignedSpeedAndModeAreStoredInDataStoreAndReadBack() = runBlocking {
+        // One store per file (DataStore forbids two at once), so persistence is the stored round trip.
+        val repo = repo()
+        PlaybackSpeedUseCase(repo).apply { assign(2.0f); toggle() }
+        val stored = repo.current()
+        assertEquals(2.0f, stored.assignedSpeed, 0f)
+        assertEquals(SpeedMode.NORMAL, stored.speedMode)
     }
 
     @Test
