@@ -28,6 +28,9 @@ interface CacheStore {
     suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String>
     suspend fun localPathsOfFeeds(feedIds: Collection<Long>): List<String>
     suspend fun allLocalPaths(): List<String>
+
+    /** The Episode with its Feed's title and artwork, for playback; null for an unknown id. */
+    suspend fun episodeForPlayback(id: Long): PlaybackEpisode?
 }
 
 interface CacheTransaction {
@@ -84,6 +87,8 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
         feedIds.chunked(SQL_VARIABLE_CHUNK).flatMap { episodes.localPathsByFeedIds(it) }
 
     override suspend fun allLocalPaths(): List<String> = episodes.allLocalPaths()
+
+    override suspend fun episodeForPlayback(id: Long): PlaybackEpisode? = episodes.episodeForPlayback(id)
 
     private inner class RoomTransaction : CacheTransaction {
         override suspend fun feedExists(id: Long) = feeds.exists(id)

@@ -28,6 +28,9 @@ sealed interface ConnectionTestResult {
     data class InvalidUrl(val error: UrlError) : ConnectionTestResult
     data class InvalidToken(val error: TokenError) : ConnectionTestResult
     data object Unreachable : ConnectionTestResult
+
+    /** The token guard refused to send the token over plain HTTP to this address; nothing was sent. */
+    data object CleartextRefused : ConnectionTestResult
     data object Timeout : ConnectionTestResult
     data object TokenRejected : ConnectionTestResult
     data object NotPodClatch : ConnectionTestResult
@@ -49,6 +52,7 @@ fun ApiError.toTestResult(stage: TestStage): ConnectionTestResult = when (this) 
     ApiError.Unauthorized ->
         if (stage == TestStage.HEALTH) ConnectionTestResult.NotPodClatch else ConnectionTestResult.TokenRejected
     ApiError.Malformed -> ConnectionTestResult.NotPodClatch
+    ApiError.CleartextRefused -> ConnectionTestResult.CleartextRefused
     is ApiError.Http -> ConnectionTestResult.HttpError(code, detail)
 }
 

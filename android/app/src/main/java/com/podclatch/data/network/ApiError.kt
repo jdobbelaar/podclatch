@@ -18,6 +18,12 @@ sealed interface ApiError {
     /** A 2xx body that does not decode, or a `/healthz` body that is not `{"status":"ok"}`. */
     data object Malformed : ApiError
 
+    /**
+     * The token guard refused to send the token over plain HTTP to a host outside loopback (release
+     * builds only). Nothing was sent. Carries no address.
+     */
+    data object CleartextRefused : ApiError
+
     /** A short, fixed-form English description that is safe to show or put in an exception. */
     val message: String
         get() = when (this) {
@@ -26,6 +32,8 @@ sealed interface ApiError {
             is Http -> if (detail.isNullOrEmpty()) "The server answered with an error (HTTP $code)." else
                 "The server answered with an error (HTTP $code): $detail"
             Malformed -> "The server's answer was not understood."
+            CleartextRefused ->
+                "The app will not send the token over an unencrypted connection to this address. Use an https:// address."
         }
 }
 

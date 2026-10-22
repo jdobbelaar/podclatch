@@ -8,6 +8,7 @@ import com.podclatch.data.db.Feed
 import com.podclatch.data.db.FeedListItem
 import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.db.PendingStateWrite
+import com.podclatch.data.db.PlaybackEpisode
 import com.podclatch.data.network.EpisodeDto
 import com.podclatch.data.network.EpisodeStateItem
 import com.podclatch.data.network.EpisodeStateResult
@@ -22,8 +23,13 @@ import com.podclatch.data.network.TombstoneDto
 import com.podclatch.data.network.TombstoneEntityType
 import com.podclatch.data.repo.Settings
 import com.podclatch.data.repo.SettingsRepository
+import com.podclatch.playback.PlayResult
+import com.podclatch.playback.PlaybackController
+import com.podclatch.playback.PlaybackPhase
+import com.podclatch.playback.PlaybackUiState
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicInteger
@@ -49,6 +55,10 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
 
     override suspend fun setSyncIntervalHours(hours: Int) {
         flow.value = flow.value.copy(syncIntervalHours = hours)
+    }
+
+    override suspend fun setSkipIntervals(backSec: Int, forwardSec: Int) {
+        flow.value = flow.value.copy(skipBackSec = backSec, skipForwardSec = forwardSec)
     }
 }
 
@@ -110,6 +120,14 @@ class FakeCacheStore : CacheStore {
         episodes.values.filter { it.feedId in feedIds }.mapNotNull { it.localPath }
 
     override suspend fun allLocalPaths(): List<String> = episodes.values.mapNotNull { it.localPath }
+
+    override suspend fun episodeForPlayback(id: Long): PlaybackEpisode? {
+        val e = episodes[id] ?: return null
+        val f = feeds[e.feedId] ?: return null
+        return PlaybackEpisode(
+            e.id, e.title, f.title, e.audioUrl, e.durationSec, e.artworkUrl, f.artworkUrl, e.downloadState, e.localPath,
+        )
+    }
 
     private inner class Tx : CacheTransaction {
         override suspend fun feedExists(id: Long) = id in feeds
@@ -325,3 +343,33 @@ fun cachedFeed(id: Long) = Feed(
     id = id, feedUrl = "https://feeds.example.com/$id.xml", title = "Old", author = "", description = "", artworkUrl = "",
     priority = 0, listenOrder = ListenOrder.NEWEST_FIRST, lastRefreshedAt = null, subscribedAt = 1, rev = 1,
 )
+
+/** A stand-in for the playback service: [knownIds] play, every other id is NotFound. */
+class FakePlaybackController(private val knownIds: Set<Long> = emptySet()) : PlaybackController {
+    private val flow = MutableStateFlow(PlaybackUiState())
+    override val state: StateFlow<PlaybackUiState> = flow
+
+    /** Every id passed to [play], in order. */
+    val played = mutableListOf<Long>()
+
+    override suspend fun play(episodeId: Long): PlayResult {
+        played += episodeId
+        if (episodeId !in knownIds) return PlayResult.NotFound
+        val loaded = flow.value.episodeId == episodeId
+        flow.value = PlaybackUiState(
+            episodeId = episodeId,
+            isPlaying = true,
+            phase = PlaybackPhase.READY,
+            title = "Episode $episodeId",
+        )
+        return if (loaded) PlayResult.Resumed else PlayResult.Started
+    }
+
+    override fun pause() {
+        flow.value = flow.value.copy(isPlaying = false)
+    }
+
+    override fun resume() {
+        if (flow.value.episodeId != null) flow.value = flow.value.copy(isPlaying = true)
+    }
+}

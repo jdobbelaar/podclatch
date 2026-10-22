@@ -371,6 +371,10 @@ private class MemorySettings : SettingsRepository {
     override suspend fun setSyncIntervalHours(hours: Int) {
         flow.value = flow.value.copy(syncIntervalHours = hours)
     }
+
+    override suspend fun setSkipIntervals(backSec: Int, forwardSec: Int) {
+        flow.value = flow.value.copy(skipBackSec = backSec, skipForwardSec = forwardSec)
+    }
 }
 
 private class ScriptedApi : PodClatchApi {

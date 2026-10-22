@@ -18,6 +18,10 @@ object Config {
 
     const val DEFAULT_SYNC_INTERVAL_HOURS = 1
 
+    /** Spec section 4 defaults for the skip buttons. */
+    const val DEFAULT_SKIP_BACK_SEC = 15
+    const val DEFAULT_SKIP_FORWARD_SEC = 30
+
     /** WorkManager refuses a repeat interval below this. */
     const val MIN_PERIODIC_INTERVAL_MINUTES = 15L
 
@@ -54,4 +58,19 @@ object Config {
 
     /** Directory under `cacheDir` that holds the artwork disk cache. */
     const val IMAGE_CACHE_DIR = "artwork"
+
+    /** The `User-Agent` of every audio request (fixed; it identifies the app, never the user). */
+    const val PLAYBACK_USER_AGENT = "PodClatch/0.1 (Android)"
+
+    /** Read timeout of the audio data source; the whole-call timeout is disabled for streaming. */
+    const val PLAYBACK_READ_TIMEOUT_SECONDS = 30L
+
+    /** Id of the media notification channel. */
+    const val PLAYBACK_CHANNEL_ID = "podclatch_playback"
+
+    /** Id of the media notification. */
+    const val PLAYBACK_NOTIFICATION_ID = 1001
+
+    /** The first `play` waits at most this long for the service connection. */
+    const val PLAYBACK_CONNECT_TIMEOUT_MS = 10_000L
 }
