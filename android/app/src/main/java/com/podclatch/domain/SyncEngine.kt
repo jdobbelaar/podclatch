@@ -16,6 +16,7 @@ import com.podclatch.data.network.StateOutcome
 import com.podclatch.data.network.SyncPageDto
 import com.podclatch.data.network.TombstoneEntityType
 import com.podclatch.data.repo.SettingsRepository
+import com.podclatch.download.PartialDownloadCleaner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -77,6 +78,7 @@ class SyncEngine(
     private val ioDispatcher: CoroutineDispatcher,
     private val pageLimit: Int = Config.SYNC_PAGE_LIMIT,
     private val pushBatchLimit: Int = Config.PUSH_BATCH_LIMIT,
+    private val partials: PartialDownloadCleaner = PartialDownloadCleaner.None,
 ) {
     private val mutex = Mutex()
     private val pendingLock = Any()
@@ -237,6 +239,9 @@ class SyncEngine(
         // pull deletes again; it can never leave an orphaned file.
         val paths = store.localPathsOfEpisodes(deletedEpisodes) + store.localPathsOfFeeds(deletedFeeds)
         if (paths.isNotEmpty()) withContext(ioDispatcher) { paths.forEach { fileDeleter.delete(it) } }
+        // A download that has no final file yet: stop its job and delete its partial file.
+        val episodeIds = deletedEpisodes + store.episodeIdsOfFeeds(deletedFeeds)
+        if (episodeIds.isNotEmpty()) withContext(ioDispatcher) { partials.discard(episodeIds) }
 
         store.transaction {
             for (id in deletedEpisodes) {

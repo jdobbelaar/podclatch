@@ -65,6 +65,12 @@ data class Episode(
     // Device-only columns: a pull must never write these.
     @ColumnInfo(defaultValue = "NONE") val downloadState: DownloadState = DownloadState.NONE,
     @ColumnInfo(defaultValue = "NULL") val localPath: String? = null,
+    /** Bytes of the audio received so far; a cache of the partial file's size, written about once a second. */
+    @ColumnInfo(defaultValue = "0") val bytesReceived: Long = 0,
+    /** The size the publisher announced, or null when unknown. */
+    val totalBytes: Long? = null,
+    /** Set by a 404 or 410: only a manual download clears it, an automatic one never retries. */
+    @ColumnInfo(defaultValue = "0") val downloadPermanentFailure: Boolean = false,
 )
 
 /** The Sync outbox: one row per Episode, the latest local write wins. */
@@ -126,4 +132,32 @@ data class FeedListItem(
     val artworkUrl: String,
     val priority: Int,
     val unplayedCount: Int,
+)
+
+/** What the download engine needs to know about one Episode. [toString] leaves out the audio address. */
+data class DownloadRow(
+    val id: Long,
+    val downloadState: DownloadState,
+    val localPath: String?,
+    val audioUrl: String,
+    val bytesReceived: Long,
+    val totalBytes: Long?,
+    val downloadPermanentFailure: Boolean,
+) {
+    override fun toString() = "DownloadRow(id=$id, downloadState=$downloadState)"
+}
+
+/** The download columns of one Episode, for a progress bar; it leaves out every address. */
+data class DownloadProgress(
+    val downloadState: DownloadState,
+    val bytesReceived: Long,
+    val totalBytes: Long?,
+    val downloadPermanentFailure: Boolean,
+)
+
+/** An Episode that has, or is getting, a download: its state and where the final file is. */
+data class DownloadEntry(
+    val id: Long,
+    val downloadState: DownloadState,
+    val localPath: String?,
 )

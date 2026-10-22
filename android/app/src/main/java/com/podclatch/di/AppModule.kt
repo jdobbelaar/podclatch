@@ -9,6 +9,7 @@ import androidx.room.Room
 import androidx.work.WorkManager
 import com.podclatch.Config
 import com.podclatch.data.db.CacheStore
+import com.podclatch.data.db.MIGRATION_1_2
 import com.podclatch.data.db.PodClatchDatabase
 import com.podclatch.data.db.RoomCacheStore
 import com.podclatch.data.network.OkHttpPodClatchApi
@@ -25,6 +26,7 @@ import com.podclatch.domain.NoOpLocalUpkeep
 import com.podclatch.domain.ServerUrlValidator
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.TokenRejection
+import com.podclatch.download.PartialDownloadCleaner
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -88,7 +90,9 @@ object AppModule {
 
     @Provides @Singleton
     fun database(@ApplicationContext context: Context): PodClatchDatabase =
-        Room.databaseBuilder(context, PodClatchDatabase::class.java, Config.DATABASE_NAME).build()
+        Room.databaseBuilder(context, PodClatchDatabase::class.java, Config.DATABASE_NAME)
+            .addMigrations(MIGRATION_1_2)
+            .build()
 
     @Provides @Singleton
     fun dataStore(@ApplicationContext context: Context, @ApplicationScope scope: CoroutineScope): DataStore<Preferences> =
@@ -111,7 +115,9 @@ object AppModule {
         tokenRejection: TokenRejection,
         fileDeleter: FileDeleter,
         @IoDispatcher io: CoroutineDispatcher,
-    ): SyncEngine = SyncEngine(api, settings, store, upkeep, clock, tokenRejection, fileDeleter, io)
+        partials: PartialDownloadCleaner,
+    ): SyncEngine =
+        SyncEngine(api, settings, store, upkeep, clock, tokenRejection, fileDeleter, io, partials = partials)
 
     @Provides @Singleton
     fun connectionRepository(

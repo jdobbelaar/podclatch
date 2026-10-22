@@ -8,6 +8,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.util.Log
 import com.podclatch.data.repo.SettingsRepository
+import com.podclatch.download.Downloads
 import com.podclatch.playback.PlaybackController
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 interface DebugEntryPoint {
     fun playback(): PlaybackController
     fun settings(): SettingsRepository
+    fun downloads(): Downloads
 
     /** For the instrumented tests that run the real service against the real store. */
     fun store(): com.podclatch.data.db.CacheStore
@@ -36,6 +38,9 @@ interface DebugEntryPoint {
  * - `com.podclatch.debug.PLAY --el episode_id <id>`
  * - `com.podclatch.debug.FOCUS --es kind transient|permanent|duck|abandon`
  * - `com.podclatch.debug.SET_SKIP --ei back <s> --ei forward <s>`
+ * - `com.podclatch.debug.DOWNLOAD --el episode_id <id> [--ez manual true|false]`
+ * - `com.podclatch.debug.CANCEL_DOWNLOAD --el episode_id <id>`
+ * - `com.podclatch.debug.SET_WIFI_ONLY --ez enabled true|false`
  */
 class DebugPlaybackReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -58,6 +63,34 @@ class DebugPlaybackReceiver : BroadcastReceiver() {
                             Log.i(TAG, "SET_SKIP result=ok back=$back forward=$forward")
                         } else {
                             Log.i(TAG, "SET_SKIP result=invalid")
+                        }
+                    }
+                    ACTION_DOWNLOAD -> {
+                        val id = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
+                        if (id < 0) {
+                            Log.i(TAG, "DOWNLOAD result=invalid")
+                        } else {
+                            val manual = intent.getBooleanExtra(EXTRA_MANUAL, false)
+                            if (manual) entry.downloads().requestManual(id) else entry.downloads().requestAutomatic(id)
+                            Log.i(TAG, "DOWNLOAD result=requested id=$id manual=$manual")
+                        }
+                    }
+                    ACTION_CANCEL_DOWNLOAD -> {
+                        val id = intent.getLongExtra(EXTRA_EPISODE_ID, -1L)
+                        if (id < 0) {
+                            Log.i(TAG, "CANCEL_DOWNLOAD result=invalid")
+                        } else {
+                            entry.downloads().remove(id)
+                            Log.i(TAG, "CANCEL_DOWNLOAD result=removed id=$id")
+                        }
+                    }
+                    ACTION_SET_WIFI_ONLY -> {
+                        if (intent.hasExtra(EXTRA_ENABLED)) {
+                            val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
+                            entry.settings().setDownloadWifiOnly(enabled)
+                            Log.i(TAG, "SET_WIFI_ONLY result=ok enabled=$enabled")
+                        } else {
+                            Log.i(TAG, "SET_WIFI_ONLY result=invalid")
                         }
                     }
                     else -> Log.i(TAG, "unknown action")
@@ -110,8 +143,13 @@ class DebugPlaybackReceiver : BroadcastReceiver() {
         const val ACTION_PLAY = "com.podclatch.debug.PLAY"
         const val ACTION_FOCUS = "com.podclatch.debug.FOCUS"
         const val ACTION_SET_SKIP = "com.podclatch.debug.SET_SKIP"
+        const val ACTION_DOWNLOAD = "com.podclatch.debug.DOWNLOAD"
+        const val ACTION_CANCEL_DOWNLOAD = "com.podclatch.debug.CANCEL_DOWNLOAD"
+        const val ACTION_SET_WIFI_ONLY = "com.podclatch.debug.SET_WIFI_ONLY"
         const val EXTRA_EPISODE_ID = "episode_id"
         const val EXTRA_KIND = "kind"
+        const val EXTRA_MANUAL = "manual"
+        const val EXTRA_ENABLED = "enabled"
         const val EXTRA_BACK = "back"
         const val EXTRA_FORWARD = "forward"
 

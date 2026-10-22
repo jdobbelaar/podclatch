@@ -140,11 +140,61 @@ interface EpisodeDao {
     @Query("SELECT localPath FROM episode WHERE localPath IS NOT NULL")
     suspend fun allLocalPaths(): List<String>
 
+    @Query("SELECT id FROM episode WHERE feedId IN (:feedIds)")
+    suspend fun idsByFeedIds(feedIds: List<Long>): List<Long>
+
     @Query("SELECT COUNT(*) FROM episode")
     fun count(): Flow<Int>
 
     @Query("DELETE FROM episode")
     suspend fun deleteAll()
+
+    // ---- Downloads. Every write is an UPDATE of an existing row, so a download never re-creates a removed Episode. ----
+
+    @Query(
+        "SELECT id, downloadState, localPath, audioUrl, bytesReceived, totalBytes, downloadPermanentFailure " +
+            "FROM episode WHERE id = :id",
+    )
+    suspend fun downloadRow(id: Long): DownloadRow?
+
+    /** Emits null when the Episode is not (or no longer) cached. */
+    @Query("SELECT downloadState, bytesReceived, totalBytes, downloadPermanentFailure FROM episode WHERE id = :id")
+    fun observeDownload(id: Long): Flow<DownloadProgress?>
+
+    @Query("SELECT id, downloadState, localPath FROM episode WHERE downloadState IN ('QUEUED', 'DOWNLOADING', 'DOWNLOADED')")
+    suspend fun downloadEntries(): List<DownloadEntry>
+
+    @Query(
+        "UPDATE episode SET downloadState = :state, " +
+            "downloadPermanentFailure = CASE WHEN :clearPermanent THEN 0 ELSE downloadPermanentFailure END WHERE id = :id",
+    )
+    suspend fun requestDownload(id: Long, state: DownloadState, clearPermanent: Boolean): Int
+
+    @Query("UPDATE episode SET downloadState = 'DOWNLOADING' WHERE id = :id AND downloadState IN ('QUEUED', 'DOWNLOADING')")
+    suspend fun markDownloading(id: Long): Int
+
+    @Query(
+        "UPDATE episode SET bytesReceived = :received, totalBytes = :total " +
+            "WHERE id = :id AND downloadState = 'DOWNLOADING'",
+    )
+    suspend fun saveDownloadProgress(id: Long, received: Long, total: Long?): Int
+
+    @Query(
+        "UPDATE episode SET downloadState = 'DOWNLOADED', localPath = :path, bytesReceived = :bytes, totalBytes = :bytes, " +
+            "downloadPermanentFailure = 0 WHERE id = :id AND downloadState IN ('QUEUED', 'DOWNLOADING')",
+    )
+    suspend fun markDownloaded(id: Long, path: String, bytes: Long): Int
+
+    @Query(
+        "UPDATE episode SET downloadState = 'FAILED', bytesReceived = :received, totalBytes = :total, " +
+            "downloadPermanentFailure = :permanent WHERE id = :id AND downloadState IN ('QUEUED', 'DOWNLOADING')",
+    )
+    suspend fun markDownloadFailed(id: Long, permanent: Boolean, received: Long, total: Long?): Int
+
+    @Query(
+        "UPDATE episode SET downloadState = 'NONE', localPath = NULL, bytesReceived = 0, totalBytes = NULL WHERE id = :id",
+    )
+    suspend fun resetDownload(id: Long): Int
 }
 
 @Dao

@@ -380,6 +380,10 @@ private class MemorySettings : SettingsRepository {
     override suspend fun toggleSpeedMode() = Unit
 
     override suspend fun assignSpeed(speed: Float?) = Unit
+
+    override suspend fun setDownloadWifiOnly(enabled: Boolean) {
+        flow.value = flow.value.copy(downloadWifiOnly = enabled)
+    }
 }
 
 private class ScriptedApi : PodClatchApi {

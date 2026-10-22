@@ -73,6 +73,10 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
     override suspend fun assignSpeed(speed: Float?) {
         flow.update { it.copy(assignedSpeed = speed ?: it.assignedSpeed, speedMode = SpeedMode.ASSIGNED) }
     }
+
+    override suspend fun setDownloadWifiOnly(enabled: Boolean) {
+        flow.update { it.copy(downloadWifiOnly = enabled) }
+    }
 }
 
 /**
@@ -145,6 +149,9 @@ class FakeCacheStore : CacheStore {
         episodes.values.filter { it.feedId in feedIds }.mapNotNull { it.localPath }
 
     override suspend fun allLocalPaths(): List<String> = episodes.values.mapNotNull { it.localPath }
+
+    override suspend fun episodeIdsOfFeeds(feedIds: Collection<Long>): List<Long> =
+        episodes.values.filter { it.feedId in feedIds }.map { it.id }
 
     override suspend fun episodeForPlayback(id: Long): PlaybackEpisode? {
         val e = episodes[id] ?: return null

@@ -2,6 +2,7 @@ package com.podclatch.data.repo
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -25,6 +26,7 @@ data class Settings(
     val skipForwardSec: Int = Config.DEFAULT_SKIP_FORWARD_SEC,
     val assignedSpeed: Float = Config.DEFAULT_ASSIGNED_SPEED,
     val speedMode: SpeedMode = SpeedMode.ASSIGNED,
+    val downloadWifiOnly: Boolean = true,
 ) {
     /** Configured means both the server URL and the token are non-blank. */
     val isConfigured: Boolean get() = serverUrl.isNotBlank() && authToken.isNotBlank()
@@ -32,7 +34,7 @@ data class Settings(
     /** Redacts the token so a log line or exception message can never carry it. */
     override fun toString(): String =
         "Settings(serverUrl=$serverUrl, authToken=***, lastSyncRev=$lastSyncRev, syncIntervalHours=$syncIntervalHours, " +
-            "skipBackSec=$skipBackSec, skipForwardSec=$skipForwardSec, assignedSpeed=$assignedSpeed, speedMode=$speedMode)"
+            "skipBackSec=$skipBackSec, skipForwardSec=$skipForwardSec, assignedSpeed=$assignedSpeed, speedMode=$speedMode, downloadWifiOnly=$downloadWifiOnly)"
 }
 
 interface SettingsRepository {
@@ -61,6 +63,9 @@ interface SettingsRepository {
      * [speed] keeps the stored assigned speed and only sets the mode.
      */
     suspend fun assignSpeed(speed: Float?)
+
+    /** Whether automatic downloads wait for an unmetered network (spec section 4; default true). */
+    suspend fun setDownloadWifiOnly(enabled: Boolean)
 }
 
 /** DataStore (Preferences) in the app's private storage. The token is stored in plain text there, by decision. */
@@ -78,6 +83,7 @@ class DataStoreSettingsRepository @Inject constructor(
             skipForwardSec = prefs[SKIP_FORWARD_SEC] ?: Config.DEFAULT_SKIP_FORWARD_SEC,
             assignedSpeed = prefs[ASSIGNED_SPEED] ?: Config.DEFAULT_ASSIGNED_SPEED,
             speedMode = modeOf(prefs[SPEED_MODE]),
+            downloadWifiOnly = prefs[DOWNLOAD_WIFI_ONLY] ?: true,
         )
     }
 
@@ -122,6 +128,10 @@ class DataStoreSettingsRepository @Inject constructor(
         }
     }
 
+    override suspend fun setDownloadWifiOnly(enabled: Boolean) {
+        dataStore.edit { it[DOWNLOAD_WIFI_ONLY] = enabled }
+    }
+
     private companion object {
         fun modeOf(stored: String?): SpeedMode = SpeedMode.entries.firstOrNull { it.name == stored } ?: SpeedMode.ASSIGNED
         val ASSIGNED_SPEED = floatPreferencesKey("assignedSpeed")
@@ -130,6 +140,7 @@ class DataStoreSettingsRepository @Inject constructor(
         val AUTH_TOKEN = stringPreferencesKey("authToken")
         val LAST_SYNC_REV = longPreferencesKey("lastSyncRev")
         val SYNC_INTERVAL_HOURS = intPreferencesKey("syncIntervalHours")
+        val DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("downloadWifiOnly")
         val SKIP_BACK_SEC = intPreferencesKey("skipBackSec")
         val SKIP_FORWARD_SEC = intPreferencesKey("skipForwardSec")
     }
