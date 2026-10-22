@@ -16,6 +16,13 @@ data object Subscribe
 @Serializable
 data class FeedDetail(val feedId: Long)
 
+/** The full player: a full-screen destination above the tabs, with neither bottom bar nor mini player. */
+@Serializable
+data object Player
+
+/** Whether a route string is the full player. */
+fun isPlayerRoute(route: String?): Boolean = route != null && route == serializer<Player>().descriptor.serialName
+
 /** The two top-level destinations that show the bottom bar. */
 enum class Tab { QUEUE, FEEDS }
 

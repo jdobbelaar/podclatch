@@ -168,4 +168,23 @@
     <string name="message_feed_unsubscribe_failed">Could not unsubscribe %1$s: %2$s</string>
     <string name="message_feed_unsubscribed_sync_failed">Unsubscribed from %1$s, but syncing failed: %2$s. The Feed will disappear after the next Sync.</string>
     <string name="message_play_failed">Could not play this episode.</string>
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_close">Close player</string>
+    <string name="player_artwork_description">Artwork for %1$s</string>
+    <string name="player_playback_failed">Playback failed</string>
+    <string name="player_skip_back_description">Skip back %1$d seconds</string>
+    <string name="player_skip_forward_description">Skip forward %1$d seconds</string>
+    <string name="player_seekbar_description">Seek bar</string>
+    <string name="player_unknown_time">--:--</string>
+    <string name="speed_button_description">Playback speed %1$s. Tap to switch to %2$s. Long press to change the assigned speed.</string>
+    <string name="speed_button_click_label">Switch between assigned speed and normal speed</string>
+    <string name="speed_button_long_click_label">Change the assigned speed</string>
+    <string name="speed_hint">Long-press to change your assigned speed</string>
+    <string name="speed_sheet_title">Assigned speed</string>
+    <string name="speed_minus_description">Slower by 0.1</string>
+    <string name="speed_plus_description">Faster by 0.1</string>
+    <string name="speed_slider_description">Assigned speed</string>
+    <string name="speed_set">Set</string>
+    <string name="speed_cancel">Cancel</string>
 </resources>

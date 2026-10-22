@@ -27,9 +27,11 @@ import com.podclatch.Config
 import com.podclatch.MainActivity
 import com.podclatch.R
 import com.podclatch.data.repo.SettingsRepository
+import com.podclatch.domain.PlaybackSpeedUseCase
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -53,10 +55,12 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var resolver: EpisodeMediaResolver
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var appClient: OkHttpClient
+    @Inject lateinit var speed: PlaybackSpeedUseCase
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var session: MediaLibrarySession? = null
     private var player: ExoPlayer? = null
+    private var speedJob: Job? = null
 
     @Volatile private var skipBackSec = Config.DEFAULT_SKIP_BACK_SEC
 
@@ -86,6 +90,8 @@ class PlaybackService : MediaLibraryService() {
         session?.let { return it }
         val exo = buildPlayer()
         player = exo
+        // The speed setting is the only input: any caller changes it, and the player follows (every Episode).
+        speedJob = PlaybackSpeedApplier(speed.state, scope) { exo.setPlaybackSpeed(it) }.start()
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 // An error leaves playWhenReady set; clear it so no Pause action stays on the notification.
@@ -106,6 +112,8 @@ class PlaybackService : MediaLibraryService() {
      * destroy a service that still has a client bound.
      */
     private fun releaseSession() {
+        speedJob?.cancel()
+        speedJob = null
         session?.release()
         session = null
         player?.release()

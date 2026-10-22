@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
+import com.podclatch.domain.SpeedMode
 import java.util.concurrent.atomic.AtomicInteger
 
 const val TEST_TOKEN = "test-token"
@@ -60,6 +62,16 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
 
     override suspend fun setSkipIntervals(backSec: Int, forwardSec: Int) {
         flow.value = flow.value.copy(skipBackSec = backSec, skipForwardSec = forwardSec)
+    }
+
+    override suspend fun toggleSpeedMode() {
+        flow.update {
+            it.copy(speedMode = if (it.speedMode == SpeedMode.ASSIGNED) SpeedMode.NORMAL else SpeedMode.ASSIGNED)
+        }
+    }
+
+    override suspend fun assignSpeed(speed: Float?) {
+        flow.update { it.copy(assignedSpeed = speed ?: it.assignedSpeed, speedMode = SpeedMode.ASSIGNED) }
     }
 }
 
@@ -398,4 +410,32 @@ class FakePlaybackController(private val knownIds: Set<Long> = emptySet()) : Pla
     override fun resume() {
         if (flow.value.episodeId != null) flow.value = flow.value.copy(isPlaying = true)
     }
+
+    /** What [currentPositionMs] answers; a test sets it to move the playhead. */
+    @Volatile var positionMs: Long = 0
+
+    /** Every position passed to [seekTo], in order. */
+    val seeks = java.util.Collections.synchronizedList(mutableListOf<Long>())
+    val skipBacks = java.util.concurrent.atomic.AtomicInteger()
+    val skipForwards = java.util.concurrent.atomic.AtomicInteger()
+
+    /** Replaces the whole state, for tests that need a duration, an artwork, or an error. */
+    fun setState(state: PlaybackUiState) {
+        flow.value = state
+    }
+
+    override fun seekTo(positionMs: Long) {
+        seeks += positionMs
+        this.positionMs = positionMs
+    }
+
+    override fun skipBack() {
+        skipBacks.incrementAndGet()
+    }
+
+    override fun skipForward() {
+        skipForwards.incrementAndGet()
+    }
+
+    override fun currentPositionMs(): Long = positionMs
 }

@@ -67,6 +67,22 @@ class MediaControllerPlaybackController @Inject constructor(
         onMain { controller?.play() }
     }
 
+    override fun seekTo(positionMs: Long) {
+        onMain { controller?.seekTo(positionMs.coerceAtLeast(0)) }
+    }
+
+    // The service's player applies the live Settings seconds (see SkipForwardingPlayer).
+    override fun skipBack() {
+        onMain { controller?.seekBack() }
+    }
+
+    override fun skipForward() {
+        onMain { controller?.seekForward() }
+    }
+
+    override fun currentPositionMs(): Long =
+        controller?.takeIf { it.isConnected }?.currentPosition?.coerceAtLeast(0) ?: 0L
+
     private fun onMain(block: () -> Unit) {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block() else
             android.os.Handler(android.os.Looper.getMainLooper()).post(block)

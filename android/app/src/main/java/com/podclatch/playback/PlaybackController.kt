@@ -18,4 +18,16 @@ interface PlaybackController {
     fun pause()
 
     fun resume()
+
+    /** Moves to [positionMs] in the loaded Episode. */
+    fun seekTo(positionMs: Long)
+
+    /** Moves back by the Settings skip-back seconds (not below 0). */
+    fun skipBack()
+
+    /** Moves forward by the Settings skip-forward seconds. */
+    fun skipForward()
+
+    /** The current position in milliseconds; 0 when nothing is loaded. Call on the main thread. */
+    fun currentPositionMs(): Long
 }

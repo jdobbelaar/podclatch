@@ -79,4 +79,15 @@ object Config {
 
     /** The first `play` waits at most this long for the service connection. */
     const val PLAYBACK_CONNECT_TIMEOUT_MS = 10_000L
+
+    /** The assigned speed until the user assigns another (spec section 4). */
+    const val DEFAULT_ASSIGNED_SPEED = 1.25f
+
+    /** The assigned speed ranges from [SPEED_MIN] to [SPEED_MAX] in [SPEED_STEP] steps. */
+    const val SPEED_MIN = 0.5f
+    const val SPEED_MAX = 3.0f
+    const val SPEED_STEP = 0.1f
+
+    /** The full player and the mini player read the playback position this often. */
+    const val PLAYER_POSITION_POLL_MS = 500L
 }
