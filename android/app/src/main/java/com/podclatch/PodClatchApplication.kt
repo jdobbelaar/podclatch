@@ -15,6 +15,7 @@ import com.podclatch.di.ApplicationScope
 import com.podclatch.domain.StartedActivityCounter
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.SyncTrigger
+import com.podclatch.download.DownloadReconciler
 import com.podclatch.work.SyncScheduler
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,7 @@ class PodClatchApplication : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var syncEngine: SyncEngine
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var syncScheduler: SyncScheduler
+    @Inject lateinit var downloadReconciler: DownloadReconciler
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     /**
@@ -64,6 +66,9 @@ class PodClatchApplication : Application(), SingletonImageLoader.Factory {
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
             override fun onActivityDestroyed(activity: Activity) = Unit
         })
+
+        // Downloads: once per process start, bring the database and the disk back in line.
+        appScope.launch { downloadReconciler.run() }
 
         // Periodic: enqueued now and again whenever the interval changes (UPDATE never duplicates it).
         appScope.launch {

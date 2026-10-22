@@ -80,6 +80,18 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun downloadWifiOnlyDefaultsToTrueAndIsStored() = runBlocking {
+        val file = File(tmp.root, "wifi.preferences_pb")
+        val repo = repo(file)
+        assertTrue(Settings().downloadWifiOnly)
+        assertTrue(repo.current().downloadWifiOnly)
+        repo.setDownloadWifiOnly(false)
+        assertFalse(repo.current().downloadWifiOnly)
+        repo.setDownloadWifiOnly(true)
+        assertTrue(repo.current().downloadWifiOnly)
+    }
+
+    @Test
     fun toStringStillRedactsTheTokenAndShowsTheSkipIntervals() {
         val text = Settings(serverUrl = "https://pod.example.com", authToken = "secret-token-value", skipBackSec = 10, skipForwardSec = 45).toString()
         assertFalse(text.contains("secret-token-value"))

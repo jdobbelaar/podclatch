@@ -25,6 +25,8 @@ android {
         }
     }
 
+    sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
+
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
@@ -82,10 +84,12 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     testImplementation(libs.kotlinx.coroutines.test)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.uiautomator)
     androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(libs.room.testing)
 }

@@ -45,9 +45,10 @@ class SyncEngineTest {
         val order = mutableListOf<String>()
         val upkeep = LocalUpkeep { order += "upkeep" }
         val rejection = TokenRejection(settings)
+        val cleaner = RecordingCleaner()
         val engine = SyncEngine(
             api, settings, store, upkeep, { now }, rejection, DiskFileDeleter(), Dispatchers.Unconfined,
-            pageLimit, pushBatchLimit,
+            pageLimit, pushBatchLimit, cleaner,
         )
 
         init {
@@ -416,6 +417,7 @@ class SyncEngineTest {
         val env = Env()
         env.store.feeds[1] = cachedFeed(1)
         env.store.episodes[10] = cachedEpisode(10, 1, downloadState = DownloadState.DOWNLOADED, localPath = "/data/x.mp3")
+            .copy(bytesReceived = 4_321, totalBytes = 9_999, downloadPermanentFailure = true)
         env.api.pullHandler = { _, _ ->
             page(feeds = listOf(feedDto(1, title = "Renamed")), episodes = listOf(episodeDto(10, 1, title = "New title"), episodeDto(11, 1)), nextRev = 5)
         }
@@ -425,9 +427,39 @@ class SyncEngineTest {
         assertEquals("New title", updated.title)
         assertEquals(DownloadState.DOWNLOADED, updated.downloadState)
         assertEquals("/data/x.mp3", updated.localPath)
+        assertEquals(4_321L, updated.bytesReceived)
+        assertEquals(9_999L, updated.totalBytes)
+        assertTrue(updated.downloadPermanentFailure)
         val fresh = env.store.episodes.getValue(11)
         assertEquals(DownloadState.NONE, fresh.downloadState)
         assertNull(fresh.localPath)
+        assertEquals(0L, fresh.bytesReceived)
+        assertNull(fresh.totalBytes)
+        assertFalse(fresh.downloadPermanentFailure)
+    }
+
+    @Test
+    fun anEpisodeTombstoneStopsItsDownloadAndDeletesItsPartialFile() {
+        val env = Env()
+        env.store.feeds[1] = cachedFeed(1)
+        env.store.episodes[10] = cachedEpisode(10, 1, downloadState = DownloadState.DOWNLOADING)
+        env.store.episodes[11] = cachedEpisode(11, 1)
+        env.api.pullHandler = { _, _ -> page(tombstones = listOf(tombstone(TombstoneEntityType.EPISODE, 10, 5)), nextRev = 5) }
+        env.sync()
+        assertEquals(listOf(10L), env.cleaner.discarded.toList())
+    }
+
+    @Test
+    fun aFeedTombstoneStopsTheDownloadsOfAllItsEpisodes() {
+        val env = Env()
+        env.store.feeds[1] = cachedFeed(1)
+        env.store.feeds[2] = cachedFeed(2)
+        env.store.episodes[10] = cachedEpisode(10, 1, downloadState = DownloadState.DOWNLOADING)
+        env.store.episodes[11] = cachedEpisode(11, 1)
+        env.store.episodes[20] = cachedEpisode(20, 2, downloadState = DownloadState.DOWNLOADING)
+        env.api.pullHandler = { _, _ -> page(tombstones = listOf(tombstone(TombstoneEntityType.FEED, 1, 5)), nextRev = 5) }
+        env.sync()
+        assertEquals(setOf(10L, 11L), env.cleaner.discarded.toSet())
     }
 
     // A local write made while the pull's network phase is in flight (the push already finished).

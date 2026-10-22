@@ -7,6 +7,10 @@ Routes (everything else is 404):
     GET|HEAD /tone-<seconds>-<hz>.wav   seconds 1..3600, hz 100..4000: an 8 kHz mono 16-bit PCM WAV of
                                         exactly 44 + seconds * 16000 bytes, generated on the fly
     GET|HEAD /redirect/<path>           302 to /<path>
+    GET|HEAD /slow/<kbps>/<path>        the same answer as /<path> (a tone; Range and 404 behave the same), with
+                                        the body paced to about <kbps> kilobytes per second, kbps 1..100000.
+                                        A redirect, slow, or gone route behind it is 404 (nothing is followed).
+    GET|HEAD /gone/<anything>           410 with an empty body
 
 One `Range: bytes=a-b` (also `a-` and `-n`) is answered with 206 and a correct `Content-Range`; a range
 that cannot be satisfied gets 416. The server writes nothing to disk. It logs one line per request holding
@@ -19,6 +23,7 @@ import math
 import re
 import struct
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -30,6 +35,9 @@ CHUNK = 64 * 1024
 
 TONE_PATH = re.compile(r"^/tone-(\d+)-(\d+)\.wav$")
 RANGE_HEADER = re.compile(r"^bytes=(\d*)-(\d*)$")
+SLOW_PATH = re.compile(r"^/slow/(\d+)(/.+)$")
+MIN_KBPS, MAX_KBPS = 1, 100000
+PACE_SLICES_PER_SECOND = 20
 
 
 def parse_tone(path):
@@ -83,6 +91,34 @@ def wav_slice(seconds, hz, start, end):
         position = stop + 1
 
 
+def parse_slow(path):
+    """Returns (kbps, inner_path) for a valid /slow/<kbps>/<path>, else None."""
+    match = SLOW_PATH.match(path)
+    if not match:
+        return None
+    kbps = int(match.group(1))
+    if not (MIN_KBPS <= kbps <= MAX_KBPS):
+        return None
+    return kbps, match.group(2)
+
+
+def paced(chunks, kbps):
+    """Yields the same bytes, in slices small enough, no faster than about kbps kilobytes per second."""
+    rate = kbps * 1000
+    slice_size = max(1, rate // PACE_SLICES_PER_SECOND)
+    started = time.monotonic()
+    sent = 0
+    for chunk in chunks:
+        for offset in range(0, len(chunk), slice_size):
+            piece = chunk[offset:offset + slice_size]
+            due = started + sent / rate
+            delay = due - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            sent += len(piece)
+            yield piece
+
+
 def parse_range(header, total):
     """Returns (start, end) inclusive, None for no usable Range header, or "unsatisfiable"."""
     if header is None:
@@ -132,7 +168,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle(self, send_body):
         path = urlsplit(self.path).path
-        if path.startswith("/redirect/") and len(path) > len("/redirect/"):
+        kbps = None
+        if path.startswith("/gone/") and len(path) > len("/gone/"):
+            return self._finish(410, [("Content-Length", "0")], (), False)
+        slow = parse_slow(path)
+        if slow is not None:
+            kbps, path = slow  # only a tone is served behind /slow/: nothing else is followed or paced
+        elif path.startswith("/slow/"):
+            return self._finish(404, [("Content-Length", "0")], (), False)
+        if kbps is None and path.startswith("/redirect/") and len(path) > len("/redirect/"):
             return self._finish(302, [("Location", "/" + path[len("/redirect/"):]), ("Content-Length", "0")], (), False)
         tone = parse_tone(path)
         if tone is None:
@@ -143,16 +187,19 @@ class Handler(BaseHTTPRequestHandler):
         requested = parse_range(self.headers.get("Range"), total)
         if requested == "unsatisfiable":
             return self._finish(416, [("Content-Range", "bytes */%d" % total), ("Content-Length", "0")], (), False)
+
+        def body(start, end):
+            chunks = wav_slice(seconds, hz, start, end)
+            return chunks if kbps is None else paced(chunks, kbps)
+
         if requested is None:
-            return self._finish(
-                200, common + [("Content-Length", str(total))], wav_slice(seconds, hz, 0, total - 1), send_body
-            )
+            return self._finish(200, common + [("Content-Length", str(total))], body(0, total - 1), send_body)
         start, end = requested
         headers = common + [
             ("Content-Range", "bytes %d-%d/%d" % (start, end, total)),
             ("Content-Length", str(end - start + 1)),
         ]
-        return self._finish(206, headers, wav_slice(seconds, hz, start, end), send_body)
+        return self._finish(206, headers, body(start, end), send_body)
 
     def do_GET(self):
         self._handle(send_body=True)

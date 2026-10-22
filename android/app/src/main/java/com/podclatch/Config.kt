@@ -96,4 +96,23 @@ object Config {
 
     /** Pausing, stopping, or switching at or beyond this percent of the duration marks the Episode Played. */
     const val PLAYED_THRESHOLD_PERCENT = 95
+
+    /** At most this many automatic (not user-started) downloads run at the same time. */
+    const val MAX_CONCURRENT_AUTOMATIC_DOWNLOADS = 2
+
+    /** Download progress is written to the database at most this often. */
+    const val DOWNLOAD_PROGRESS_INTERVAL_MS = 1_000L
+
+    /** Connect and read timeouts of the download client; there is no whole-call timeout. */
+    const val DOWNLOAD_CONNECT_TIMEOUT_SECONDS = 15L
+    const val DOWNLOAD_READ_TIMEOUT_SECONDS = 30L
+
+    /** Directory name under the app's external files directory that holds downloaded audio. */
+    const val DOWNLOAD_DIR_NAME = "audio"
+
+    /** Bytes copied per read while downloading. */
+    const val DOWNLOAD_CHUNK_BYTES = 32 * 1024
+
+    /** Prefix of the unique WorkManager job name of one Episode's download. */
+    const val DOWNLOAD_WORK_NAME_PREFIX = "podclatch-download-"
 }
