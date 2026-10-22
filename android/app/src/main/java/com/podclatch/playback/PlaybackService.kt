@@ -11,6 +11,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.annotation.OptIn
+import androidx.core.app.NotificationManagerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -120,6 +121,7 @@ class PlaybackService : MediaLibraryService() {
         if (shouldStopOnTaskRemoved(playing)) {
             pauseAllPlayersAndStopSelf()
             releaseSession()
+            cancelNotification()
         }
     }
 
@@ -127,6 +129,14 @@ class PlaybackService : MediaLibraryService() {
         scope.cancel()
         releaseSession()
         super.onDestroy()
+        // Last, after Media3 has torn down its own notification handling: a notification update that was
+        // already queued when the session was released can otherwise re-post it (an orphan whose Play
+        // button points at a service that no longer exists).
+        cancelNotification()
+    }
+
+    private fun cancelNotification() {
+        NotificationManagerCompat.from(this).cancel(Config.PLAYBACK_NOTIFICATION_ID)
     }
 
     private fun buildPlayer(): ExoPlayer {
