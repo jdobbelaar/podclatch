@@ -57,7 +57,7 @@ class QueueQueryInstrumentedTest {
         }
 
     @Test
-    fun theQueueHoldsExactlyTheNewEpisodesThatAreDownloadedOrDownloading() = runBlocking {
+    fun theQueueHoldsExactlyTheNewEpisodesThatAreDownloadedOrDownloading() = runBlocking<Unit> {
         // One Episode for every combination of status and download state; id = 100 * status + state.
         val feed = feed(1)
         val episodes = buildList {
@@ -79,7 +79,7 @@ class QueueQueryInstrumentedTest {
     }
 
     @Test
-    fun feedPriorityComesFirstThenEachFeedsListenOrder() = runBlocking {
+    fun feedPriorityComesFirstThenEachFeedsListenOrder() = runBlocking<Unit> {
         val newest = feed(1, priority = 1, order = ListenOrder.NEWEST_FIRST)
         val oldest = feed(2, priority = 0, order = ListenOrder.OLDEST_FIRST)
         insert(
@@ -103,7 +103,7 @@ class QueueQueryInstrumentedTest {
     }
 
     @Test
-    fun changingAFeedsListenOrderResortsOnlyThatFeedLive() = runBlocking {
+    fun changingAFeedsListenOrderResortsOnlyThatFeedLive() = runBlocking<Unit> {
         insert(
             listOf(feed(1, priority = 0), feed(2, priority = 1)),
             listOf(episode(10, 1, publishedAt = 100), episode(11, 1, publishedAt = 200), episode(20, 2, publishedAt = 100), episode(21, 2, publishedAt = 200)),
@@ -117,7 +117,7 @@ class QueueQueryInstrumentedTest {
     }
 
     @Test
-    fun reorderingFeedsResortsTheQueueLive() = runBlocking {
+    fun reorderingFeedsResortsTheQueueLive() = runBlocking<Unit> {
         insert(
             listOf(feed(1, priority = 0), feed(2, priority = 1)),
             listOf(episode(10, 1), episode(20, 2)),
@@ -131,7 +131,7 @@ class QueueQueryInstrumentedTest {
     }
 
     @Test
-    fun theQueueIsLiveForMarksDownloadsAndRemovals() = runBlocking {
+    fun theQueueIsLiveForMarksDownloadsAndRemovals() = runBlocking<Unit> {
         insert(listOf(feed(1)), listOf(episode(10, 1, publishedAt = 300), episode(11, 1, publishedAt = 200), episode(12, 1, downloadState = DownloadState.NONE, publishedAt = 100)))
         val repo = EpisodeStateRepository(store) { 10_000L }
         assertEquals(listOf(10L, 11L), ids(store.observeQueue().first()))
@@ -155,7 +155,7 @@ class QueueQueryInstrumentedTest {
     }
 
     @Test
-    fun anEpisodeThatIsNotInTheQueueStillHasItsOrderKey() = runBlocking {
+    fun anEpisodeThatIsNotInTheQueueStillHasItsOrderKey() = runBlocking<Unit> {
         insert(listOf(feed(1, priority = 4, order = ListenOrder.OLDEST_FIRST)), listOf(episode(10, 1, status = EpisodeStatus.PLAYED, downloadState = DownloadState.NONE, publishedAt = 77)))
         assertEquals(emptyList<Long>(), ids(store.queue()))
         val row = store.queueRowOf(10)
