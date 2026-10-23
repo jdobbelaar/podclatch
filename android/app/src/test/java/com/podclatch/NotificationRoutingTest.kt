@@ -7,6 +7,7 @@ import com.podclatch.ui.nav.Player
 import com.podclatch.ui.nav.Queue
 import com.podclatch.ui.nav.Subscribe
 import com.podclatch.ui.nav.isOpenQueueAction
+import com.podclatch.ui.nav.isPlayerRoute
 import com.podclatch.ui.nav.needsQueueSwitch
 import kotlinx.serialization.serializer
 import org.junit.Assert.assertFalse
@@ -37,5 +38,15 @@ class NotificationRoutingTest {
         assertTrue(isOpenQueueAction(ACTION_OPEN_QUEUE))
         assertFalse(isOpenQueueAction(null))
         assertFalse(isOpenQueueAction("android.intent.action.MAIN"))
+    }
+
+    @Test
+    fun onlyThePlayerIsPoppedBeforeTheSwitchSoItIsNeverRestored() {
+        // MainNav pops the Player with a plain pop first; switchTab would save it and then restore it.
+        assertTrue(isPlayerRoute(serializer<Player>().descriptor.serialName))
+        assertFalse(isPlayerRoute(serializer<Queue>().descriptor.serialName))
+        assertFalse(isPlayerRoute(serializer<Feeds>().descriptor.serialName))
+        assertFalse(isPlayerRoute(serializer<FeedDetail>().descriptor.serialName))
+        assertFalse(isPlayerRoute(null))
     }
 }

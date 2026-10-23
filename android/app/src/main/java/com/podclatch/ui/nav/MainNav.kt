@@ -55,6 +55,9 @@ fun MainNav(
     LaunchedEffect(openQueueRequested) {
         if (openQueueRequested) {
             // No destination yet means a cold start, which already begins on the Queue.
+            // The full player is dropped first with a plain pop. Going through switchTab alone would save
+            // the popped Player in the Queue tab's saved state, and restoreState would bring it straight back.
+            while (isPlayerRoute(navController.currentDestination?.route) && navController.popBackStack()) Unit
             val current = navController.currentDestination?.route
             if (current != null && needsQueueSwitch(current)) navController.switchTab(Queue)
             onOpenQueueHandled()

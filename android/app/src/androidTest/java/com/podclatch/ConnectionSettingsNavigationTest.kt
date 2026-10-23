@@ -31,7 +31,10 @@ class ConnectionSettingsNavigationTest {
 
     private val feedJson = """{"id":41,"feedUrl":"https://feeds.example.com/a.xml","title":"Nav Test Feed","author":"Nobody",
         "description":"","artworkUrl":"","priority":0,"listenOrder":"NEWEST_FIRST","lastRefreshedAt":null,"subscribedAt":1,"rev":3}"""
-    private val page = """{"feeds":[$feedJson],"episodes":[],"tombstones":[],"nextRev":3,"hasMore":false}"""
+    private val episodeJson = """{"id":51,"feedId":41,"guid":"g-51","title":"Nav Test Episode","description":"",
+        "audioUrl":"https://audio.example.com/51.mp3","publishedAt":2000,"durationSec":60,"artworkUrl":null,"status":"NEW",
+        "playedAt":null,"positionSec":0,"stateUpdatedAt":1000,"rev":3}"""
+    private val page = """{"feeds":[$feedJson],"episodes":[$episodeJson],"tombstones":[],"nextRev":3,"hasMore":false}"""
 
     @Before
     fun setUp() {
@@ -44,6 +47,8 @@ class ConnectionSettingsNavigationTest {
             }
         }
         server.start()
+        // The first Episode loaded in a process would ask for this at a moment the test cannot predict.
+        device.executeShellCommand("pm grant com.podclatch android.permission.POST_NOTIFICATIONS")
         val context = instrumentation.targetContext
         context.startActivity(
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
@@ -65,15 +70,15 @@ class ConnectionSettingsNavigationTest {
         device.wait(Until.findObject(selector), timeoutMs)
 
     private fun fill(id: String, value: String) {
-        val field = wait(res(id))!!
-        field.click()
-        field.text = value
+        click(res(id))
+        // A fresh lookup for the write: the click may have recomposed the field.
+        wait(res(id))!!.text = value
     }
 
     private fun openConnectionSettings() {
-        wait(res("overflow_menu"))!!.click()
+        click(res("overflow_menu"))
         // The menu is a popup window, which does not expose test tags; find the item by its text.
-        wait(By.text("Connection settings"))!!.click()
+        click(By.text("Connection settings"))
         assertNotNull("connection screen", wait(res("server_url")))
     }
 
@@ -97,31 +102,54 @@ class ConnectionSettingsNavigationTest {
         if (onConnectionScreen == false) openConnectionSettings()
         fill("server_url", server.url("/").toString().trimEnd('/'))
         fill("auth_token", "test-token")
-        wait(res("test_connection"))!!.click()
-        val save = wait(By.res("save_continue").enabled(true))!!
-        save.click()
+        click(res("test_connection"))
+        click(By.res("save_continue").enabled(true))
         // A different server asks for confirmation before the cache is wiped.
         device.wait(Until.findObject(By.text("Switch server")), 2_000)?.click()
         assertNotNull("tabs after saving", wait(res("tab_queue")))
     }
 
+    /** Waits for the exact end state with a fresh query each time, so no UiObject2 outlives a recomposition. */
+    private fun awaitPresent(what: String, selector: BySelector, timeoutMs: Long = 15_000) {
+        assertTrue("Not reached within $timeoutMs ms: $what", device.wait(Until.hasObject(selector), timeoutMs))
+    }
+
+    private fun awaitGone(what: String, selector: BySelector, timeoutMs: Long = 15_000) {
+        assertTrue("Not reached within $timeoutMs ms: $what", device.wait(Until.gone(selector), timeoutMs))
+    }
+
+    /** Clicks a freshly found object, retrying when a recomposition invalidates it between the find and the click. */
+    private fun click(selector: BySelector) {
+        var last: Exception? = null
+        repeat(5) {
+            try {
+                val target = device.wait(Until.findObject(selector), 15_000) ?: throw AssertionError("Not found: $selector")
+                target.click()
+                return
+            } catch (e: androidx.test.uiautomator.StaleObjectException) {
+                last = e
+            }
+        }
+        throw AssertionError("Stale after 5 tries: $selector", last)
+    }
+
     private fun openFeedsTab() {
-        wait(res("tab_feeds"))!!.click()
-        assertNotNull("the Feed row", wait(res("feed_row_41")))
-        assertTrue(wait(res("tab_feeds"))!!.isSelected)
+        click(res("tab_feeds"))
+        awaitPresent("the Feed row", res("feed_row_41"))
+        awaitPresent("Feeds tab selected", By.res("tab_feeds").selected(true))
     }
 
     private fun assertBackOnFeedsTab() {
-        assertNotNull("the Feed row after returning", wait(res("feed_row_41")))
-        assertTrue("Feeds tab selected", wait(res("tab_feeds"))!!.isSelected)
-        assertNull("not on the connection screen", device.findObject(res("server_url")))
+        awaitPresent("the Feed row after returning", res("feed_row_41"))
+        awaitPresent("Feeds tab selected", By.res("tab_feeds").selected(true))
+        awaitGone("the connection screen", res("server_url"))
     }
 
     @Test
     fun cancelFromTheFeedsTabReturnsToTheFeedsTab() {
         openFeedsTab()
         openConnectionSettings()
-        wait(res("connection_cancel"))!!.click()
+        click(res("connection_cancel"))
         assertBackOnFeedsTab()
     }
 
@@ -144,9 +172,9 @@ class ConnectionSettingsNavigationTest {
     }
 
     private fun assertOnQueueTab() {
-        val tab = wait(By.res("tab_queue").selected(true))
-        assertNotNull("Queue tab selected", tab)
-        assertNotNull(wait(res("queue_list")) ?: wait(res("queue_empty")))
+        awaitPresent("Queue tab selected", By.res("tab_queue").selected(true))
+        awaitGone("the full player", res("player_close"))
+        awaitPresent("the Queue content", res("queue_list"))
     }
 
     @Test
@@ -159,18 +187,67 @@ class ConnectionSettingsNavigationTest {
     @Test
     fun theNotificationTapSelectsTheQueueFromFeedDetail() {
         openFeedsTab()
-        wait(res("feed_row_41"))!!.click()
-        assertNull("the tab bar is hidden in Feed Detail", device.wait(Until.findObject(res("tab_feeds")), 1_000))
+        click(res("feed_row_41"))
+        awaitGone("the tab bar in Feed Detail", res("tab_feeds"))
+        tapTheNotification()
+        assertOnQueueTab()
+    }
+
+    /**
+     * Presses Back until the Feeds tab is selected. The Episode may already be loaded from an earlier test
+     * (the process outlives a test), in which case tapping its row can open the player first, so one Back
+     * is not always enough to get from Feed Detail to the tab.
+     */
+    private fun backToTheFeedsTab() {
+        repeat(3) {
+            device.pressBack()
+            if (device.wait(Until.hasObject(By.res("tab_feeds").selected(true)), 4_000)) return
+        }
+        awaitPresent("Feeds tab selected", By.res("tab_feeds").selected(true), timeoutMs = 1_000)
+    }
+
+    /** Opens the full player from the Queue tab (the case where a naive switchTab brings the Player back). */
+    private fun openFullPlayerFromTheQueueTab() {
+        openFeedsTab()
+        click(res("feed_row_41"))
+        click(res("episode_row_51"))
+        awaitPresent("the mini player", res("mini_player"))
+        backToTheFeedsTab() // Feed Detail to Feeds
+        click(res("tab_queue"))
+        awaitPresent("Queue tab selected", By.res("tab_queue").selected(true))
+        click(res("mini_player"))
+        awaitPresent("the full player", res("player_close"))
+        awaitGone("the tab bar under the player", res("tab_queue"))
+    }
+
+    @Test
+    fun theNotificationTapSelectsTheQueueFromTheFullPlayerOpenedOnTheQueueTab() {
+        openFullPlayerFromTheQueueTab()
+        device.pressHome()
+        tapTheNotification()
+        assertOnQueueTab()
+    }
+
+    @Test
+    fun theNotificationTapSelectsTheQueueFromTheFullPlayerOpenedOnTheFeedsTab() {
+        openFeedsTab()
+        click(res("feed_row_41"))
+        click(res("episode_row_51"))
+        awaitPresent("the mini player", res("mini_player"))
+        backToTheFeedsTab()
+        click(res("mini_player"))
+        awaitPresent("the full player", res("player_close"))
+        device.pressHome()
         tapTheNotification()
         assertOnQueueTab()
     }
 
     @Test
     fun theQueueTabAlsoReturnsToTheQueueTab() {
-        wait(res("tab_queue"))!!.click()
+        click(res("tab_queue"))
         openConnectionSettings()
-        wait(res("connection_cancel"))!!.click()
-        assertNotNull(wait(res("queue_list")) ?: wait(res("queue_empty")))
-        assertTrue(wait(res("tab_queue"))!!.isSelected)
+        click(res("connection_cancel"))
+        awaitPresent("the Queue content", res("queue_list"))
+        awaitPresent("Queue tab selected", By.res("tab_queue").selected(true))
     }
 }
