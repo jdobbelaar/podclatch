@@ -138,7 +138,7 @@ class ConnectionSettingsNavigationTest {
         wait(res("tab_queue"))!!.click()
         openConnectionSettings()
         wait(res("connection_cancel"))!!.click()
-        assertNotNull(wait(res("queue_placeholder")))
+        assertNotNull(wait(res("queue_list")) ?: wait(res("queue_empty")))
         assertTrue(wait(res("tab_queue"))!!.isSelected)
     }
 }

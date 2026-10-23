@@ -66,8 +66,38 @@ interface FeedDao {
     suspend fun deleteAll()
 }
 
+/** The columns of a [QueueRow]; the WHERE and ORDER BY are added by each query. */
+private const val QUEUE_SELECT =
+    "SELECT e.id AS episodeId, e.feedId AS feedId, f.priority AS feedPriority, f.listenOrder AS listenOrder, " +
+        "e.publishedAt AS publishedAt, e.title AS title, f.title AS feedTitle, f.artworkUrl AS feedArtworkUrl, " +
+        "e.durationSec AS durationSec, e.positionSec AS positionSec, e.downloadState AS downloadState, " +
+        "e.bytesReceived AS bytesReceived, e.totalBytes AS totalBytes " +
+        "FROM episode e INNER JOIN feed f ON f.id = e.feedId "
+
+/**
+ * The Queue (spec 5.3): New Episodes that are downloaded or downloading. Order: Feed Priority ascending,
+ * then inside a Feed its Listen Order (`NEWEST_FIRST` is `publishedAt` then `id` descending, `OLDEST_FIRST`
+ * the exact reverse). The same order as `QueueOrder` in `domain/`.
+ */
+private const val QUEUE_FILTER = "WHERE e.status = 'NEW' AND e.downloadState IN ('DOWNLOADED', 'DOWNLOADING') "
+
+private const val QUEUE_ORDER =
+    "ORDER BY f.priority ASC, f.id ASC, " +
+        "CASE WHEN f.listenOrder = 'NEWEST_FIRST' THEN -e.publishedAt ELSE e.publishedAt END ASC, " +
+        "CASE WHEN f.listenOrder = 'NEWEST_FIRST' THEN -e.id ELSE e.id END ASC"
+
 @Dao
 interface EpisodeDao {
+    @Query(QUEUE_SELECT + QUEUE_FILTER + QUEUE_ORDER)
+    fun observeQueue(): Flow<List<QueueRow>>
+
+    @Query(QUEUE_SELECT + QUEUE_FILTER + QUEUE_ORDER)
+    suspend fun queue(): List<QueueRow>
+
+    /** One Episode in the shape of a Queue row, whether or not it is in the Queue; null for an unknown id. */
+    @Query(QUEUE_SELECT + "WHERE e.id = :id")
+    suspend fun queueRowOf(id: Long): QueueRow?
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertIfAbsent(episode: Episode): Long
 

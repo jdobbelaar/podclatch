@@ -7,9 +7,6 @@ import com.podclatch.data.repo.ConnectionTestResult
 import com.podclatch.data.repo.SaveResult
 import com.podclatch.data.repo.Settings
 import com.podclatch.data.repo.SettingsRepository
-import com.podclatch.domain.SyncEngine
-import com.podclatch.domain.SyncState
-import com.podclatch.domain.SyncTrigger
 import com.podclatch.domain.TokenRejection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,15 +130,5 @@ class ConnectionViewModel @Inject constructor(
             val savedUrl = settings.current().serverUrl
             _state.value = ConnectionUiState(url = savedUrl, fromHome = fromHome)
         }
-    }
-}
-
-/** The Queue placeholder's Sync line and button (replaced by the Queue itself in US-13). */
-@HiltViewModel
-class QueueViewModel @Inject constructor(private val engine: SyncEngine) : ViewModel() {
-    val sync: StateFlow<SyncState> = engine.state
-
-    fun syncNow() {
-        viewModelScope.launch { engine.sync(SyncTrigger.MANUAL) }
     }
 }

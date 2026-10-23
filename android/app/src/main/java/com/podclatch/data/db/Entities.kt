@@ -5,6 +5,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.podclatch.domain.QueueKey
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -161,3 +162,27 @@ data class DownloadEntry(
     val downloadState: DownloadState,
     val localPath: String?,
 )
+
+/**
+ * One Queue row: an Episode joined with its Feed, with the columns that order it and the ones the Queue
+ * screen shows. [toString] leaves out the artwork address.
+ */
+data class QueueRow(
+    val episodeId: Long,
+    val feedId: Long,
+    val feedPriority: Int,
+    val listenOrder: ListenOrder,
+    val publishedAt: Long,
+    val title: String,
+    val feedTitle: String,
+    val feedArtworkUrl: String,
+    val durationSec: Int?,
+    val positionSec: Int,
+    val downloadState: DownloadState,
+    val bytesReceived: Long,
+    val totalBytes: Long?,
+) {
+    val key: QueueKey get() = QueueKey(episodeId, feedId, feedPriority, listenOrder, publishedAt)
+
+    override fun toString() = "QueueRow(episodeId=$episodeId, downloadState=$downloadState)"
+}

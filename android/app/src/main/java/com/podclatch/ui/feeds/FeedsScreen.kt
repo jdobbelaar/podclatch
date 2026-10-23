@@ -68,6 +68,7 @@ import com.podclatch.Config
 import com.podclatch.R
 import com.podclatch.data.db.FeedListItem
 import com.podclatch.ui.TabTopBar
+import com.podclatch.ui.common.FeedsMessageBanner
 import com.podclatch.ui.common.PullRefreshBox
 import com.podclatch.ui.subscribe.SubscribeOutcome
 import kotlinx.coroutines.launch
@@ -111,7 +112,7 @@ fun FeedsScreen(
             Box(Modifier.fillMaxWidth().heightIn(min = 4.dp)) {
                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("feeds_busy"))
             }
-            state.message?.let { MessageBanner(it, onDismiss = vm::dismissMessage) }
+            state.message?.let { FeedsMessageBanner(it, tag = "feeds_message", onDismiss = vm::dismissMessage) }
             FeedsList(
                 state = state,
                 onOpenFeed = onOpenFeed,
@@ -141,46 +142,6 @@ fun FeedsScreen(
             },
         )
     }
-}
-
-@Composable
-private fun MessageBanner(message: FeedsMessage, onDismiss: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        modifier = Modifier.fillMaxWidth().testTag("feeds_message"),
-    ) {
-        Row(Modifier.padding(start = 16.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
-                for (line in messageLines(message)) Text(line, style = MaterialTheme.typography.bodyMedium)
-            }
-            TextButton(onClick = onDismiss, modifier = Modifier.testTag("message_dismiss")) {
-                Text(stringResource(R.string.message_dismiss))
-            }
-        }
-    }
-}
-
-@Composable
-private fun messageLines(message: FeedsMessage): List<String> = when (message) {
-    is FeedsMessage.MoveFailed -> listOf(stringResource(R.string.message_move_failed, message.reason))
-    FeedsMessage.ListChanged -> listOf(stringResource(R.string.message_list_changed))
-    is FeedsMessage.UnsubscribeFailed ->
-        listOf(stringResource(R.string.message_unsubscribe_failed, displayTitle(message.title), message.reason))
-    is FeedsMessage.UnsubscribedSyncFailed ->
-        listOf(stringResource(R.string.message_unsubscribed_sync_failed, displayTitle(message.title), message.reason))
-    is FeedsMessage.RefreshPartial -> buildList {
-        add(stringResource(R.string.message_refresh_partial, message.failed, message.total))
-        for (line in message.lines) {
-            val name = line.title?.let { displayTitle(it) } ?: stringResource(R.string.message_refresh_a_feed)
-            add(stringResource(R.string.message_refresh_line, name, line.error))
-        }
-        if (message.more > 0) add(stringResource(R.string.message_refresh_more, message.more))
-    }
-    is FeedsMessage.SubscribedSyncFailed -> listOf(stringResource(R.string.message_subscribed_sync_failed, message.reason))
-    is FeedsMessage.RefreshFailed -> listOf(stringResource(R.string.message_refresh_failed, message.reason))
-    is FeedsMessage.RefreshSyncFailed -> listOf(stringResource(R.string.message_refresh_sync_failed, message.reason))
-    FeedsMessage.Unexpected -> listOf(stringResource(R.string.message_unexpected))
 }
 
 @Composable

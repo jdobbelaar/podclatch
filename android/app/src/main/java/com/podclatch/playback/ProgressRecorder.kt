@@ -31,7 +31,8 @@ fun interface PlaybackSource {
  * - [onLoaded] a different Episode (or none) is now loaded; [onPlaying] playback started or stopped moving;
  * - [onPause], [onStop], [onSwitch] the final save for an Episode (a `NEW` one at 95 percent or more becomes
  *   Played), followed by a Sync;
- * - [onEnded] the Episode reached its end: Played, then [onFinished] so the service stops and clears the player;
+ * - [onEnded] the Episode reached its end: Played, then [onFinished] with its id so the service moves on to the
+ *   next Queue item (or stops and clears the player when there is none);
  * - [detach] the state changed under the player, so nothing more is written for the loaded Episode.
  *
  * Every write runs in one worker, in the order the events came, so a late tick cannot overwrite a newer
@@ -44,7 +45,7 @@ class ProgressRecorder(
     private val source: PlaybackSource,
     private val fallbackDurationSec: suspend (Long) -> Int?,
     private val sync: suspend () -> Unit,
-    private val onFinished: () -> Unit,
+    private val onFinished: (episodeId: Long) -> Unit,
     private val onError: (Throwable) -> Unit = {},
     private val tickMs: Long = Config.POSITION_SAVE_INTERVAL_MS,
 ) {
@@ -184,7 +185,7 @@ class ProgressRecorder(
             record(id, result)
             if (result.outcome == PlaybackWriteOutcome.SAVED) launchSync()
         } finally {
-            onFinished()
+            onFinished(id)
         }
     }
 

@@ -28,13 +28,16 @@ import com.podclatch.Config
 import com.podclatch.MainActivity
 import com.podclatch.R
 import com.podclatch.data.db.CacheStore
+import com.podclatch.data.db.EpisodeStatus
 import com.podclatch.data.repo.EpisodeStateRepository
+import com.podclatch.data.repo.QueueRepository
 import com.podclatch.data.repo.SettingsRepository
 import com.podclatch.di.ApplicationScope
 import com.podclatch.domain.PlaybackSpeedUseCase
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.SyncTrigger
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -67,6 +70,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var speed: PlaybackSpeedUseCase
     @Inject lateinit var store: CacheStore
     @Inject lateinit var stateRepository: EpisodeStateRepository
+    @Inject lateinit var queueRepository: QueueRepository
     @Inject lateinit var syncEngine: SyncEngine
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
@@ -156,7 +160,7 @@ class PlaybackService : MediaLibraryService() {
             source = { withContext(Dispatchers.Main.immediate) { snapshotOf(exo) } },
             fallbackDurationSec = { id -> store.episodeForPlayback(id)?.durationSec },
             sync = { syncEngine.sync(SyncTrigger.MANUAL) },
-            onFinished = { stopAndClear(exo) },
+            onFinished = { id -> advanceFrom(exo, id, alwaysPlay = true) },
             onError = { Log.w(TAG, "Saving playback progress failed: ${it.javaClass.simpleName}") },
         )
         recorder = progress
@@ -164,9 +168,14 @@ class PlaybackService : MediaLibraryService() {
             scope = appScope,
             observe = store::observeEpisode,
             isOwnStamp = progress::isOwnStamp,
-            onExternalChange = {
+            onExternalChange = { change ->
                 progress.detach()
-                stopAndClear(exo)
+                // Marked Played from anywhere: on to the next Queue item. Anything else stops (spec 5.3).
+                if (change.progress?.status == EpisodeStatus.PLAYED) {
+                    advanceFrom(exo, change.episodeId, alwaysPlay = false)
+                } else {
+                    stopAndClear(exo)
+                }
             },
         )
         watcher = changes
@@ -203,6 +212,49 @@ class PlaybackService : MediaLibraryService() {
                 exo.stop()
                 exo.clearMediaItems()
             }
+        }
+    }
+
+    private val advancer by lazy {
+        QueueAdvancer(
+            queue = queueRepository::queueKeys,
+            keyOf = queueRepository::keyOf,
+            resolve = resolver::resolve,
+            startPositionMs = ::startPositionFor,
+        )
+    }
+
+    /**
+     * Auto-advance (spec 5.3 Queue): the Episode [finishedId] ended or was marked Played, so the next Queue
+     * item is loaded at its saved position, or the player is stopped and cleared when none can be played.
+     * It runs here, in the service, so it works with the screen off. [alwaysPlay] is true after a natural end;
+     * after a Mark the next item plays only if playback was not paused. Nothing happens if the user already
+     * loaded something else.
+     */
+    private fun advanceFrom(exo: ExoPlayer, finishedId: Long, alwaysPlay: Boolean) {
+        scope.launch(Dispatchers.Main.immediate) {
+            val stillThere = { player === exo && exo.currentMediaItem?.mediaId == finishedId.toString() }
+            if (!stillThere()) return@launch
+            val play = alwaysPlay || exo.playWhenReady
+            val target = try {
+                advancer.next(finishedId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Choosing the next Queue item failed: ${e.javaClass.simpleName}")
+                null
+            }
+            if (!stillThere()) return@launch
+            if (target == null) {
+                exo.stop()
+                exo.clearMediaItems()
+                return@launch
+            }
+            val nextId = target.episode.mediaId.toLongOrNull()
+            if (nextId != null) appScope.launch { downloadStarter.onPlayRequested(nextId) }
+            exo.setMediaItem(mediaItemOf(target.episode), target.startPositionMs)
+            exo.prepare()
+            exo.playWhenReady = play
         }
     }
 

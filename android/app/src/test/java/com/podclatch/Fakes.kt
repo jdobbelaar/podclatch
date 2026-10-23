@@ -2,6 +2,7 @@ package com.podclatch
 
 import com.podclatch.data.db.CacheStore
 import com.podclatch.data.db.CacheTransaction
+import com.podclatch.data.db.DownloadState
 import com.podclatch.data.db.Episode
 import com.podclatch.data.db.EpisodeStatus
 import com.podclatch.data.db.Feed
@@ -10,6 +11,7 @@ import com.podclatch.data.db.FeedListItem
 import com.podclatch.data.db.ListenOrder
 import com.podclatch.data.db.PendingStateWrite
 import com.podclatch.data.db.PlaybackEpisode
+import com.podclatch.data.db.QueueRow
 import com.podclatch.data.network.EpisodeDto
 import com.podclatch.data.network.EpisodeStateItem
 import com.podclatch.data.network.EpisodeStateResult
@@ -94,6 +96,9 @@ class FakeCacheStore : CacheStore {
 
     private val version = MutableStateFlow(0)
 
+    /** Tells the observers that a test changed [feeds] or [episodes] directly. */
+    fun touch() = publish()
+
     private fun publish() {
         counts.value = feeds.size to episodes.size
         version.value += 1
@@ -139,6 +144,25 @@ class FakeCacheStore : CacheStore {
     override fun observeEpisode(id: Long): Flow<com.podclatch.data.db.EpisodeProgress?> = version.map {
         episodes[id]?.let { com.podclatch.data.db.EpisodeProgress(it.status, it.playedAt, it.positionSec, it.stateUpdatedAt) }
     }.distinctUntilChanged()
+
+    private fun rowOf(e: Episode): QueueRow? {
+        val f = feeds[e.feedId] ?: return null
+        return QueueRow(
+            e.id, f.id, f.priority, f.listenOrder, e.publishedAt, e.title, f.title, f.artworkUrl, e.durationSec,
+            e.positionSec, e.downloadState, e.bytesReceived, e.totalBytes,
+        )
+    }
+
+    private fun queueNow(): List<QueueRow> = episodes.values
+        .filter { it.status == EpisodeStatus.NEW && (it.downloadState == DownloadState.DOWNLOADED || it.downloadState == DownloadState.DOWNLOADING) }
+        .mapNotNull(::rowOf)
+        .sortedWith { a, b -> com.podclatch.domain.QueueOrder.compare(a.key, b.key) }
+
+    override fun observeQueue(): Flow<List<QueueRow>> = version.map { queueNow() }.distinctUntilChanged()
+
+    override suspend fun queue(): List<QueueRow> = queueNow()
+
+    override suspend fun queueRowOf(id: Long): QueueRow? = episodes[id]?.let(::rowOf)
 
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.values.sortedBy { it.episodeId }
 

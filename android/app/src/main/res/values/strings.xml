@@ -50,7 +50,6 @@
     <string name="back">Back</string>
 
     <!-- Queue placeholder -->
-    <string name="queue_placeholder">Your Queue will appear here.</string>
     <string name="sync_running">Syncing...</string>
     <string name="sync_last">Last synced %1$s</string>
     <string name="sync_never">Not synced yet</string>
@@ -187,4 +186,14 @@
     <string name="speed_slider_description">Assigned speed</string>
     <string name="speed_set">Set</string>
     <string name="speed_cancel">Cancel</string>
+    <!-- Queue tab (US-13) -->
+    <string name="queue_empty">Your Queue fills itself. Subscribe to Feeds and new Episodes are downloaded and queued here.</string>
+    <string name="queue_loading_description">Loading the Queue</string>
+    <string name="queue_time_left">%1$s left</string>
+    <string name="queue_now_playing">Now playing</string>
+    <string name="queue_now_playing_suffix">now playing</string>
+    <string name="queue_not_started">Not started</string>
+    <string name="queue_download_percent">%1$d percent downloaded</string>
+    <string name="queue_downloading">Downloading</string>
+    <string name="queue_sync_now_description">Sync now</string>
 </resources>

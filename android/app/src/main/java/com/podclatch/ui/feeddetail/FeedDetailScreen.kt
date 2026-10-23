@@ -84,6 +84,7 @@ import com.podclatch.data.db.FeedEpisode
 import com.podclatch.data.db.ListenOrder
 import com.podclatch.ui.BackTopBar
 import com.podclatch.ui.common.PullRefreshBox
+import com.podclatch.ui.common.SwipeableEpisodeRow
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import kotlin.math.roundToInt
@@ -502,69 +503,6 @@ private fun EpisodeMenu(episode: FeedEpisode, played: Boolean, onMarkPlayed: () 
                 },
                 modifier = Modifier.testTag("menu_toggle_played_${episode.id}"),
             )
-        }
-    }
-}
-
-// ---- Swipe a row: left marks Played, right marks New ----
-
-/**
- * Shows [content] and lets it be dragged sideways. Releasing beyond [Config.SWIPE_EPISODE_FRACTION] of
- * the width to the left calls [onMarkPlayed], to the right [onMarkNew]; in every case the content then
- * animates back to rest. The row is never removed here, and a no-op swipe is decided by the repository.
- * Velocity is ignored on purpose, so a short fast swipe cannot trigger it.
- */
-@Composable
-private fun SwipeableEpisodeRow(onMarkPlayed: () -> Unit, onMarkNew: () -> Unit, content: @Composable () -> Unit) {
-    var width by remember { mutableIntStateOf(0) }
-    var dragX by remember { mutableFloatStateOf(0f) }
-    val scope = rememberCoroutineScope()
-    val currentOnMarkPlayed by rememberUpdatedState(onMarkPlayed)
-    val currentOnMarkNew by rememberUpdatedState(onMarkNew)
-
-    fun snapBack() {
-        val from = dragX
-        scope.launch { animate(from, 0f) { value, _ -> dragX = value } }
-    }
-
-    Box(Modifier.fillMaxWidth().onSizeChanged { width = it.width }) {
-        if (dragX != 0f) {
-            val toLeft = dragX < 0f
-            Row(
-                Modifier.matchParentSize().background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 24.dp),
-                horizontalArrangement = if (toLeft) Arrangement.End else Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (toLeft) {
-                    Text(stringResource(R.string.swipe_label_played), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    Spacer(Modifier.width(8.dp))
-                    Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                } else {
-                    Box(Modifier.size(12.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.swipe_label_new), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-            }
-        }
-        Box(
-            Modifier
-                .offset { IntOffset(dragX.roundToInt(), 0) }
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            val threshold = Config.SWIPE_EPISODE_FRACTION * width
-                            if (width > 0 && -dragX > threshold) currentOnMarkPlayed()
-                            if (width > 0 && dragX > threshold) currentOnMarkNew()
-                            snapBack()
-                        },
-                        onDragCancel = { snapBack() },
-                    ) { change, delta ->
-                        change.consume()
-                        dragX = (dragX + delta).coerceIn(-width.toFloat(), width.toFloat())
-                    }
-                },
-        ) {
-            Surface(color = Color.Transparent) { content() }
         }
     }
 }

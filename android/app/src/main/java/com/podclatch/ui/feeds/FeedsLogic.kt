@@ -1,8 +1,12 @@
 package com.podclatch.ui.feeds
 
 import com.podclatch.Config
+import com.podclatch.data.network.ApiError
 import com.podclatch.data.network.RefreshResultDto
+import com.podclatch.data.repo.FeedsRepository
+import com.podclatch.data.repo.FeedsResult
 import com.podclatch.domain.SyncResult
+import kotlinx.coroutines.CancellationException
 
 /*
  * The pure rules behind the Feeds tab: list moves, the badge, the messages, and the
@@ -97,4 +101,21 @@ fun buildRefreshMessage(
         )
     }
     return (sync as? SyncResult.Failed)?.let { FeedsMessage.RefreshSyncFailed(it.reason.message) }
+}
+
+/**
+ * The big swipe's Refresh of every Feed, shared by the Feeds tab and the Queue tab: `POST /v1/refresh`,
+ * then a Sync. Returns what the banner should say, or null when nothing needs saying (also after a
+ * rejected token, which shows the connection screen instead). [titlesById] names the failed Feeds.
+ */
+suspend fun refreshAllFeeds(repo: FeedsRepository, titlesById: Map<Long, String>): FeedsMessage? = try {
+    when (val result = repo.refreshAll()) {
+        is FeedsResult.Ok -> buildRefreshMessage(result.value.results, result.value.sync, titlesById)
+        is FeedsResult.Failed ->
+            if (result.error is ApiError.Unauthorized) null else FeedsMessage.RefreshFailed(result.error.message)
+    }
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    FeedsMessage.Unexpected
 }
