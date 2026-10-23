@@ -186,3 +186,22 @@ data class QueueRow(
 
     override fun toString() = "QueueRow(episodeId=$episodeId, downloadState=$downloadState)"
 }
+
+/**
+ * What the auto-download top-up needs to know about one New Episode: where it sorts and how its download
+ * stands. It holds no address and no title.
+ */
+data class TopUpRow(
+    val episodeId: Long,
+    val feedId: Long,
+    val feedPriority: Int,
+    val listenOrder: ListenOrder,
+    val publishedAt: Long,
+    val downloadState: DownloadState,
+    val downloadPermanentFailure: Boolean,
+) {
+    val key: QueueKey get() = QueueKey(episodeId, feedId, feedPriority, listenOrder, publishedAt)
+}
+
+/** A Feed's id and title, for the new-episode notification text. */
+data class FeedTitle(val id: Long, val title: String)

@@ -384,6 +384,14 @@ private class MemorySettings : SettingsRepository {
     override suspend fun setDownloadWifiOnly(enabled: Boolean) {
         flow.value = flow.value.copy(downloadWifiOnly = enabled)
     }
+
+    override suspend fun setDownloadAheadPerFeed(count: Int) {
+        flow.value = flow.value.copy(downloadAheadPerFeed = count)
+    }
+
+    override suspend fun setNotifyNewEpisodes(enabled: Boolean) {
+        flow.value = flow.value.copy(notifyNewEpisodes = enabled)
+    }
 }
 
 private class ScriptedApi : PodClatchApi {

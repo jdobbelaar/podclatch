@@ -115,4 +115,15 @@ object Config {
 
     /** Prefix of the unique WorkManager job name of one Episode's download. */
     const val DOWNLOAD_WORK_NAME_PREFIX = "podclatch-download-"
+
+    /** Spec section 4 default for `downloadAheadPerFeed`; the top-up clamps whatever is stored to the range below. */
+    const val DEFAULT_DOWNLOAD_AHEAD_PER_FEED = 3
+    const val MIN_DOWNLOAD_AHEAD_PER_FEED = 1
+    const val MAX_DOWNLOAD_AHEAD_PER_FEED = 10
+
+    /** Id of the "New episodes" notification channel (separate from the playback channel). */
+    const val NEW_EPISODES_CHANNEL_ID = "podclatch_new_episodes"
+
+    /** The one fixed id of the new-episodes notification, so a later Sync replaces it. */
+    const val NEW_EPISODES_NOTIFICATION_ID = 1002
 }

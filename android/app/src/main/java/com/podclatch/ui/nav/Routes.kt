@@ -23,6 +23,18 @@ data object Player
 /** Whether a route string is the full player. */
 fun isPlayerRoute(route: String?): Boolean = route != null && route == serializer<Player>().descriptor.serialName
 
+/** The action of the intent a tap on the new-episodes notification sends; it asks the app to show the Queue tab. */
+const val ACTION_OPEN_QUEUE = "com.podclatch.action.OPEN_QUEUE"
+
+/** Whether [action] is the notification tap's. */
+fun isOpenQueueAction(action: String?): Boolean = action == ACTION_OPEN_QUEUE
+
+/**
+ * Whether a tap on the notification has to navigate: from any destination except the Queue tab itself
+ * (the Feeds tab, Feed Detail, Subscribe, the full player, or no destination yet).
+ */
+fun needsQueueSwitch(route: String?): Boolean = tabForRoute(route) != Tab.QUEUE
+
 /** The two top-level destinations that show the bottom bar. */
 enum class Tab { QUEUE, FEEDS }
 

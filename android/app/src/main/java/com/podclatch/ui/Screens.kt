@@ -56,7 +56,12 @@ import java.util.Date
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun AppRoot(main: MainViewModel, connection: ConnectionViewModel) {
+fun AppRoot(
+    main: MainViewModel,
+    connection: ConnectionViewModel,
+    openQueueRequested: Boolean = false,
+    onOpenQueueHandled: () -> Unit = {},
+) {
     val settings by main.settings.collectAsState()
     val connectionState by connection.state.collectAsState()
     val rejected by connection.tokenRejected.collectAsState()
@@ -74,7 +79,7 @@ fun AppRoot(main: MainViewModel, connection: ConnectionViewModel) {
             current == null -> Unit
             !current.isConfigured || connectionState.fromHome ->
                 ConnectionScreen(connection, connectionState, showRejectedNotice = rejected && !current.isConfigured)
-            else -> MainNav(navController, onOpenConnection = connection::openFromHome)
+            else -> MainNav(navController, onOpenConnection = connection::openFromHome, openQueueRequested = openQueueRequested, onOpenQueueHandled = onOpenQueueHandled)
         }
     }
 }

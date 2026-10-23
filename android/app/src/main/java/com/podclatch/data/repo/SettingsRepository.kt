@@ -27,6 +27,8 @@ data class Settings(
     val assignedSpeed: Float = Config.DEFAULT_ASSIGNED_SPEED,
     val speedMode: SpeedMode = SpeedMode.ASSIGNED,
     val downloadWifiOnly: Boolean = true,
+    val downloadAheadPerFeed: Int = Config.DEFAULT_DOWNLOAD_AHEAD_PER_FEED,
+    val notifyNewEpisodes: Boolean = false,
 ) {
     /** Configured means both the server URL and the token are non-blank. */
     val isConfigured: Boolean get() = serverUrl.isNotBlank() && authToken.isNotBlank()
@@ -34,7 +36,7 @@ data class Settings(
     /** Redacts the token so a log line or exception message can never carry it. */
     override fun toString(): String =
         "Settings(serverUrl=$serverUrl, authToken=***, lastSyncRev=$lastSyncRev, syncIntervalHours=$syncIntervalHours, " +
-            "skipBackSec=$skipBackSec, skipForwardSec=$skipForwardSec, assignedSpeed=$assignedSpeed, speedMode=$speedMode, downloadWifiOnly=$downloadWifiOnly)"
+            "skipBackSec=$skipBackSec, skipForwardSec=$skipForwardSec, assignedSpeed=$assignedSpeed, speedMode=$speedMode, downloadWifiOnly=$downloadWifiOnly, downloadAheadPerFeed=$downloadAheadPerFeed, notifyNewEpisodes=$notifyNewEpisodes)"
 }
 
 interface SettingsRepository {
@@ -66,6 +68,12 @@ interface SettingsRepository {
 
     /** Whether automatic downloads wait for an unmetered network (spec section 4; default true). */
     suspend fun setDownloadWifiOnly(enabled: Boolean)
+
+    /** How many New Episodes per Feed the top-up keeps downloaded or on their way (spec section 4; default 3). */
+    suspend fun setDownloadAheadPerFeed(count: Int)
+
+    /** Whether a background Sync that brought in new Episodes posts a notification (default false). */
+    suspend fun setNotifyNewEpisodes(enabled: Boolean)
 }
 
 /** DataStore (Preferences) in the app's private storage. The token is stored in plain text there, by decision. */
@@ -84,6 +92,8 @@ class DataStoreSettingsRepository @Inject constructor(
             assignedSpeed = prefs[ASSIGNED_SPEED] ?: Config.DEFAULT_ASSIGNED_SPEED,
             speedMode = modeOf(prefs[SPEED_MODE]),
             downloadWifiOnly = prefs[DOWNLOAD_WIFI_ONLY] ?: true,
+            downloadAheadPerFeed = prefs[DOWNLOAD_AHEAD_PER_FEED] ?: Config.DEFAULT_DOWNLOAD_AHEAD_PER_FEED,
+            notifyNewEpisodes = prefs[NOTIFY_NEW_EPISODES] ?: false,
         )
     }
 
@@ -132,6 +142,14 @@ class DataStoreSettingsRepository @Inject constructor(
         dataStore.edit { it[DOWNLOAD_WIFI_ONLY] = enabled }
     }
 
+    override suspend fun setDownloadAheadPerFeed(count: Int) {
+        dataStore.edit { it[DOWNLOAD_AHEAD_PER_FEED] = count }
+    }
+
+    override suspend fun setNotifyNewEpisodes(enabled: Boolean) {
+        dataStore.edit { it[NOTIFY_NEW_EPISODES] = enabled }
+    }
+
     private companion object {
         fun modeOf(stored: String?): SpeedMode = SpeedMode.entries.firstOrNull { it.name == stored } ?: SpeedMode.ASSIGNED
         val ASSIGNED_SPEED = floatPreferencesKey("assignedSpeed")
@@ -141,6 +159,8 @@ class DataStoreSettingsRepository @Inject constructor(
         val LAST_SYNC_REV = longPreferencesKey("lastSyncRev")
         val SYNC_INTERVAL_HOURS = intPreferencesKey("syncIntervalHours")
         val DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("downloadWifiOnly")
+        val DOWNLOAD_AHEAD_PER_FEED = intPreferencesKey("downloadAheadPerFeed")
+        val NOTIFY_NEW_EPISODES = booleanPreferencesKey("notifyNewEpisodes")
         val SKIP_BACK_SEC = intPreferencesKey("skipBackSec")
         val SKIP_FORWARD_SEC = intPreferencesKey("skipForwardSec")
     }
