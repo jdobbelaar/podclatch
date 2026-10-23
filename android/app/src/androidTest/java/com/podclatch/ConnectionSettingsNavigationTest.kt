@@ -133,6 +133,38 @@ class ConnectionSettingsNavigationTest {
         assertBackOnFeedsTab()
     }
 
+    /** What a tap on the new-episodes notification sends. */
+    private fun tapTheNotification() {
+        val context = instrumentation.targetContext
+        context.startActivity(
+            Intent(context, MainActivity::class.java)
+                .setAction(com.podclatch.ui.nav.ACTION_OPEN_QUEUE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        )
+    }
+
+    private fun assertOnQueueTab() {
+        val tab = wait(By.res("tab_queue").selected(true))
+        assertNotNull("Queue tab selected", tab)
+        assertNotNull(wait(res("queue_list")) ?: wait(res("queue_empty")))
+    }
+
+    @Test
+    fun theNotificationTapSelectsTheQueueFromTheFeedsTab() {
+        openFeedsTab()
+        tapTheNotification()
+        assertOnQueueTab()
+    }
+
+    @Test
+    fun theNotificationTapSelectsTheQueueFromFeedDetail() {
+        openFeedsTab()
+        wait(res("feed_row_41"))!!.click()
+        assertNull("the tab bar is hidden in Feed Detail", device.wait(Until.findObject(res("tab_feeds")), 1_000))
+        tapTheNotification()
+        assertOnQueueTab()
+    }
+
     @Test
     fun theQueueTabAlsoReturnsToTheQueueTab() {
         wait(res("tab_queue"))!!.click()

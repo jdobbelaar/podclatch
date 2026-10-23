@@ -11,6 +11,7 @@ import com.podclatch.MainActivity
 import com.podclatch.R
 import com.podclatch.domain.NewEpisodeNotice
 import com.podclatch.domain.NewEpisodeNotifier
+import com.podclatch.ui.nav.ACTION_OPEN_QUEUE
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,7 +38,7 @@ class AndroidNewEpisodeNotifier @Inject constructor(
             val open = PendingIntent.getActivity(
                 context,
                 0,
-                Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                Intent(context, MainActivity::class.java).setAction(ACTION_OPEN_QUEUE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val notification = NotificationCompat.Builder(context, Config.NEW_EPISODES_CHANNEL_ID)

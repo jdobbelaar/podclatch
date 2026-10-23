@@ -10,6 +10,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -42,9 +43,23 @@ import com.podclatch.ui.subscribe.SubscribeScreen
  * NavController's standard saved state.
  */
 @Composable
-fun MainNav(navController: NavHostController, onOpenConnection: () -> Unit) {
+fun MainNav(
+    navController: NavHostController,
+    onOpenConnection: () -> Unit,
+    openQueueRequested: Boolean = false,
+    onOpenQueueHandled: () -> Unit = {},
+) {
     val entry by navController.currentBackStackEntryAsState()
     val route = entry?.destination?.route
+    // A tap on the new-episodes notification: show the Queue tab from wherever the user is.
+    LaunchedEffect(openQueueRequested) {
+        if (openQueueRequested) {
+            // No destination yet means a cold start, which already begins on the Queue.
+            val current = navController.currentDestination?.route
+            if (current != null && needsQueueSwitch(current)) navController.switchTab(Queue)
+            onOpenQueueHandled()
+        }
+    }
     val selected = tabForRoute(route)
     val player: PlayerViewModel = hiltViewModel()
     val playback by player.playbackState.collectAsStateWithLifecycle()
