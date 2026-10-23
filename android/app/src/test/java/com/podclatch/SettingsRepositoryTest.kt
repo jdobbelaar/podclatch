@@ -99,4 +99,27 @@ class SettingsRepositoryTest {
         assertTrue(text.contains("skipBackSec=10"))
         assertTrue(text.contains("skipForwardSec=45"))
     }
+
+    @Test
+    fun downloadAheadDefaultsToThreeAndNotifyToOffAndBothAreStored() = runBlocking {
+        val repo = repo(File(tmp.root, "ahead.preferences_pb"))
+        assertEquals(3, Settings().downloadAheadPerFeed)
+        assertFalse(Settings().notifyNewEpisodes)
+        assertEquals(3, repo.current().downloadAheadPerFeed)
+        assertFalse(repo.current().notifyNewEpisodes)
+        repo.setDownloadAheadPerFeed(7)
+        repo.setNotifyNewEpisodes(true)
+        assertEquals(7, repo.current().downloadAheadPerFeed)
+        assertTrue(repo.current().notifyNewEpisodes)
+        repo.setNotifyNewEpisodes(false)
+        assertFalse(repo.current().notifyNewEpisodes)
+    }
+
+    @Test
+    fun toStringStillRedactsTheTokenWithTheNewKeys() {
+        val text = Settings(authToken = "secret-token-value", downloadAheadPerFeed = 5, notifyNewEpisodes = true).toString()
+        assertFalse(text.contains("secret-token-value"))
+        assertTrue(text.contains("downloadAheadPerFeed=5"))
+        assertTrue(text.contains("notifyNewEpisodes=true"))
+    }
 }

@@ -79,6 +79,14 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
     override suspend fun setDownloadWifiOnly(enabled: Boolean) {
         flow.update { it.copy(downloadWifiOnly = enabled) }
     }
+
+    override suspend fun setDownloadAheadPerFeed(count: Int) {
+        flow.update { it.copy(downloadAheadPerFeed = count) }
+    }
+
+    override suspend fun setNotifyNewEpisodes(enabled: Boolean) {
+        flow.update { it.copy(notifyNewEpisodes = enabled) }
+    }
 }
 
 /**
@@ -163,6 +171,19 @@ class FakeCacheStore : CacheStore {
     override suspend fun queue(): List<QueueRow> = queueNow()
 
     override suspend fun queueRowOf(id: Long): QueueRow? = episodes[id]?.let(::rowOf)
+
+    override suspend fun topUpRows(): List<com.podclatch.data.db.TopUpRow> = episodes.values
+        .filter { it.status == EpisodeStatus.NEW }
+        .mapNotNull { e ->
+            feeds[e.feedId]?.let { f ->
+                com.podclatch.data.db.TopUpRow(
+                    e.id, f.id, f.priority, f.listenOrder, e.publishedAt, e.downloadState, e.downloadPermanentFailure,
+                )
+            }
+        }
+
+    override suspend fun feedTitles(feedIds: Collection<Long>): List<com.podclatch.data.db.FeedTitle> =
+        feedIds.mapNotNull { id -> feeds[id]?.let { com.podclatch.data.db.FeedTitle(it.id, it.title) } }
 
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.values.sortedBy { it.episodeId }
 

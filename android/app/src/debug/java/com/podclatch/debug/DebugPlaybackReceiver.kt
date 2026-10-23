@@ -41,6 +41,8 @@ interface DebugEntryPoint {
  * - `com.podclatch.debug.DOWNLOAD --el episode_id <id> [--ez manual true|false]`
  * - `com.podclatch.debug.CANCEL_DOWNLOAD --el episode_id <id>`
  * - `com.podclatch.debug.SET_WIFI_ONLY --ez enabled true|false`
+ * - `com.podclatch.debug.SET_DOWNLOAD_AHEAD --ei value <n>`
+ * - `com.podclatch.debug.SET_NOTIFY_NEW --ez enabled true|false`
  */
 class DebugPlaybackReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -91,6 +93,24 @@ class DebugPlaybackReceiver : BroadcastReceiver() {
                             Log.i(TAG, "SET_WIFI_ONLY result=ok enabled=$enabled")
                         } else {
                             Log.i(TAG, "SET_WIFI_ONLY result=invalid")
+                        }
+                    }
+                    ACTION_SET_DOWNLOAD_AHEAD -> {
+                        val value = intent.getIntExtra(EXTRA_VALUE, -1)
+                        if (value > 0) {
+                            entry.settings().setDownloadAheadPerFeed(value)
+                            Log.i(TAG, "SET_DOWNLOAD_AHEAD result=ok value=$value")
+                        } else {
+                            Log.i(TAG, "SET_DOWNLOAD_AHEAD result=invalid")
+                        }
+                    }
+                    ACTION_SET_NOTIFY_NEW -> {
+                        if (intent.hasExtra(EXTRA_ENABLED)) {
+                            val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
+                            entry.settings().setNotifyNewEpisodes(enabled)
+                            Log.i(TAG, "SET_NOTIFY_NEW result=ok enabled=$enabled")
+                        } else {
+                            Log.i(TAG, "SET_NOTIFY_NEW result=invalid")
                         }
                     }
                     else -> Log.i(TAG, "unknown action")
@@ -146,6 +166,9 @@ class DebugPlaybackReceiver : BroadcastReceiver() {
         const val ACTION_DOWNLOAD = "com.podclatch.debug.DOWNLOAD"
         const val ACTION_CANCEL_DOWNLOAD = "com.podclatch.debug.CANCEL_DOWNLOAD"
         const val ACTION_SET_WIFI_ONLY = "com.podclatch.debug.SET_WIFI_ONLY"
+        const val ACTION_SET_DOWNLOAD_AHEAD = "com.podclatch.debug.SET_DOWNLOAD_AHEAD"
+        const val ACTION_SET_NOTIFY_NEW = "com.podclatch.debug.SET_NOTIFY_NEW"
+        const val EXTRA_VALUE = "value"
         const val EXTRA_EPISODE_ID = "episode_id"
         const val EXTRA_KIND = "kind"
         const val EXTRA_MANUAL = "manual"

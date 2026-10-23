@@ -4,6 +4,7 @@ import com.podclatch.Config
 import com.podclatch.data.db.CacheStore
 import com.podclatch.data.db.CacheTransaction
 import com.podclatch.data.db.Episode
+import com.podclatch.data.db.EpisodeStatus
 import com.podclatch.data.db.Feed
 import com.podclatch.data.db.PendingStateWrite
 import com.podclatch.data.network.ApiError
@@ -95,7 +96,7 @@ class SyncEngine(
     suspend fun sync(trigger: SyncTrigger): SyncResult {
         if (mutex.tryLock()) {
             try {
-                return runLocked()
+                return runLocked(trigger)
             } finally {
                 mutex.unlock()
             }
@@ -117,7 +118,7 @@ class SyncEngine(
             result = mutex.withLock {
                 // Callers arriving from here on started after this run begins, so they queue a new one.
                 synchronized(pendingLock) { pendingManual = null }
-                runLocked()
+                runLocked(trigger)
             }
             return result
         } finally {
@@ -129,15 +130,15 @@ class SyncEngine(
     /** Runs [block] under the same lock as Sync, so it cannot overlap a run (used to wipe the cache). */
     suspend fun <T> exclusive(block: suspend () -> T): T = mutex.withLock { block() }
 
-    private suspend fun runLocked(): SyncResult {
+    private suspend fun runLocked(trigger: SyncTrigger): SyncResult {
         val current = settings.current()
         if (!current.isConfigured) return SyncResult.Skipped(SkipReason.NotConfigured)
 
         _state.update { it.copy(running = true) }
         val result = try {
             push()
-            pull()
-            upkeep.run()
+            val summary = pull(trigger)
+            upkeep.run(summary)
             SyncResult.Success
         } catch (e: CancellationException) {
             _state.update { it.copy(running = false) }
@@ -204,7 +205,7 @@ class SyncEngine(
 
     // ---- Pull ----
 
-    private suspend fun pull() {
+    private suspend fun pull(trigger: SyncTrigger): PullSummary {
         val startRev = settings.current().lastSyncRev
         val pages = mutableListOf<SyncPageDto>()
         var since = startRev
@@ -218,13 +219,15 @@ class SyncEngine(
         }
         val finalRev = pages.last().nextRev
 
-        apply(pages)
+        val inserted = apply(pages)
 
         // Only after the apply transaction has committed. An empty pull leaves the cursor alone.
         if (finalRev > startRev) settings.setLastSyncRev(finalRev)
+        return PullSummary(trigger, firstPull = startRev == 0L, insertedNew = inserted)
     }
 
-    private suspend fun apply(pages: List<SyncPageDto>) {
+    /** Applies the pages and returns the Episodes it inserted as New (an Episode that only changed is not one). */
+    private suspend fun apply(pages: List<SyncPageDto>): List<InsertedEpisode> {
         val deletedEpisodes = HashSet<Long>()
         val deletedFeeds = HashSet<Long>()
         for (page in pages) {
@@ -243,7 +246,14 @@ class SyncEngine(
         val episodeIds = deletedEpisodes + store.episodeIdsOfFeeds(deletedFeeds)
         if (episodeIds.isNotEmpty()) withContext(ioDispatcher) { partials.discard(episodeIds) }
 
-        store.transaction {
+        return store.transaction {
+            val inserted = mutableListOf<InsertedEpisode>()
+            // Which Feeds were cached before this pull touched anything.
+            val cachedBefore = HashSet<Long>()
+            for (page in pages) {
+                for (feed in page.feeds) if (feedExists(feed.id)) cachedBefore += feed.id
+                for (episode in page.episodes) if (feedExists(episode.feedId)) cachedBefore += episode.feedId
+            }
             for (id in deletedEpisodes) {
                 deleteEpisode(id)
                 deletePending(id)
@@ -264,9 +274,14 @@ class SyncEngine(
                     if (episode.id in deletedEpisodes || episode.feedId in deletedFeeds) continue
                     // Foreign key: skip an Episode whose Feed is not cached rather than fail the pull forever.
                     if (!feedExists(episode.feedId)) continue
+                    val existed = getEpisode(episode.id) != null
                     applyEpisode(episode, pending)
+                    if (!existed && episode.status == EpisodeStatus.NEW) {
+                        inserted += InsertedEpisode(episode.id, episode.feedId, episode.feedId in cachedBefore)
+                    }
                 }
             }
+            inserted
         }
     }
 

@@ -107,6 +107,7 @@
 
     <!-- Playback -->
     <string name="playback_channel_name">Playback</string>
+    <string name="new_episodes_channel_name">New episodes</string>
     <string name="notification_skip_back">Skip back %1$d seconds</string>
     <string name="notification_skip_forward">Skip forward %1$d seconds</string>
 

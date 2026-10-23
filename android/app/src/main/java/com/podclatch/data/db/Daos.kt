@@ -42,6 +42,9 @@ interface FeedDao {
     @Query("SELECT EXISTS(SELECT 1 FROM feed WHERE id = :id)")
     suspend fun exists(id: Long): Boolean
 
+    @Query("SELECT id, title FROM feed WHERE id IN (:ids)")
+    suspend fun titlesByIds(ids: List<Long>): List<FeedTitle>
+
     @Query("SELECT COUNT(*) FROM feed")
     fun count(): Flow<Int>
 
@@ -160,6 +163,15 @@ interface EpisodeDao {
 
     @Query("DELETE FROM episode WHERE feedId = :feedId")
     suspend fun deleteByFeed(feedId: Long)
+
+    /** Every New Episode of every Feed with the columns the top-up decides on (no order is promised). */
+    @Query(
+        "SELECT e.id AS episodeId, e.feedId AS feedId, f.priority AS feedPriority, f.listenOrder AS listenOrder, " +
+            "e.publishedAt AS publishedAt, e.downloadState AS downloadState, " +
+            "e.downloadPermanentFailure AS downloadPermanentFailure " +
+            "FROM episode e JOIN feed f ON f.id = e.feedId WHERE e.status = 'NEW'",
+    )
+    suspend fun topUpRows(): List<TopUpRow>
 
     @Query("SELECT localPath FROM episode WHERE id IN (:ids) AND localPath IS NOT NULL")
     suspend fun localPathsByIds(ids: List<Long>): List<String>

@@ -42,6 +42,12 @@ interface CacheStore {
     /** One Episode in the shape of a Queue row (in the Queue or not); null for an unknown id. */
     suspend fun queueRowOf(id: Long): QueueRow?
 
+    /** Every New Episode of every Feed with what the auto-download top-up needs; no order is promised. */
+    suspend fun topUpRows(): List<TopUpRow>
+
+    /** The titles of the given Feeds (a Feed that is not cached is left out). */
+    suspend fun feedTitles(feedIds: Collection<Long>): List<FeedTitle>
+
     suspend fun pendingWrites(): List<PendingStateWrite>
     suspend fun localPathsOfEpisodes(episodeIds: Collection<Long>): List<String>
     suspend fun localPathsOfFeeds(feedIds: Collection<Long>): List<String>
@@ -113,6 +119,11 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
     override suspend fun queue(): List<QueueRow> = episodes.queue()
 
     override suspend fun queueRowOf(id: Long): QueueRow? = episodes.queueRowOf(id)
+
+    override suspend fun topUpRows(): List<TopUpRow> = episodes.topUpRows()
+
+    override suspend fun feedTitles(feedIds: Collection<Long>): List<FeedTitle> =
+        feedIds.chunked(SQL_VARIABLE_CHUNK).flatMap { feeds.titlesByIds(it) }
 
     override suspend fun pendingWrites(): List<PendingStateWrite> = pending.getAll()
 

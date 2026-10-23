@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.room.Room
+import android.util.Log
 import androidx.work.WorkManager
 import com.podclatch.Config
 import com.podclatch.data.db.CacheStore
@@ -21,12 +22,17 @@ import com.podclatch.data.repo.SettingsRepository
 import com.podclatch.domain.Clock
 import com.podclatch.domain.DiskFileDeleter
 import com.podclatch.domain.FileDeleter
+import com.podclatch.domain.AutoDownloadTopUp
 import com.podclatch.domain.LocalUpkeep
-import com.podclatch.domain.NoOpLocalUpkeep
+import com.podclatch.domain.NewEpisodeNotificationStep
+import com.podclatch.domain.NewEpisodeNotifier
+import com.podclatch.domain.OrderedLocalUpkeep
 import com.podclatch.domain.ServerUrlValidator
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.TokenRejection
+import com.podclatch.download.Downloads
 import com.podclatch.download.PartialDownloadCleaner
+import com.podclatch.work.AndroidNewEpisodeNotifier
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -58,9 +64,7 @@ abstract class BindingsModule {
     @Binds abstract fun settings(impl: DataStoreSettingsRepository): SettingsRepository
     @Binds abstract fun cacheStore(impl: RoomCacheStore): CacheStore
     @Binds abstract fun fileDeleter(impl: DiskFileDeleter): FileDeleter
-
-    /** The local-upkeep hook; US-14 and US-15 replace this binding with their implementation. */
-    @Binds abstract fun localUpkeep(impl: NoOpLocalUpkeep): LocalUpkeep
+    @Binds abstract fun newEpisodeNotifier(impl: AndroidNewEpisodeNotifier): NewEpisodeNotifier
 }
 
 @Module
@@ -104,6 +108,24 @@ object AppModule {
 
     @Provides @Singleton
     fun workManager(@ApplicationContext context: Context): WorkManager = WorkManager.getInstance(context)
+
+    /**
+     * The local upkeep after every successful pull, as an ordered list of steps. US-15 adds the auto-delete
+     * sweep in front of the top-up. A failing step is logged by name and exception class only.
+     */
+    @Provides @Singleton
+    fun localUpkeep(
+        store: CacheStore,
+        settings: SettingsRepository,
+        downloads: Downloads,
+        notifier: NewEpisodeNotifier,
+    ): LocalUpkeep = OrderedLocalUpkeep(
+        steps = listOf(
+            "top-up" to AutoDownloadTopUp(store, settings, downloads),
+            "new-episode notification" to NewEpisodeNotificationStep(store, settings, notifier),
+        ),
+        onStepFailed = { step, errorClass -> Log.w("PodClatchSync", "Upkeep step $step failed: $errorClass") },
+    )
 
     @Provides @Singleton
     fun syncEngine(

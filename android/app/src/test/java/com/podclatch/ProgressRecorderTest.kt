@@ -4,7 +4,7 @@ import com.podclatch.data.db.EpisodeStatus
 import com.podclatch.data.repo.EpisodeStateRepository
 import com.podclatch.data.repo.PlaybackWriteOutcome
 import com.podclatch.domain.DiskFileDeleter
-import com.podclatch.domain.NoOpLocalUpkeep
+import com.podclatch.domain.LocalUpkeep
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.SyncResult
 import com.podclatch.domain.SyncTrigger
@@ -616,7 +616,7 @@ class ProgressRecorderTest {
         }
         val settings = FakeSettings()
         val engine = SyncEngine(
-            api, settings, e.store, NoOpLocalUpkeep(), { e.now }, TokenRejection(settings), DiskFileDeleter(),
+            api, settings, e.store, LocalUpkeep { }, { e.now }, TokenRejection(settings), DiskFileDeleter(),
             Dispatchers.Unconfined,
         )
         assertEquals(SyncResult.Success, engine.sync(SyncTrigger.MANUAL))

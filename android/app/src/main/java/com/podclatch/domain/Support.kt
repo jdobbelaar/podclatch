@@ -13,18 +13,6 @@ fun interface Clock {
     fun nowMs(): Long
 }
 
-/**
- * Housekeeping that runs after a successful pull. This story provides a no-op; the auto-delete sweep
- * (US-15) and the auto-download top-up (US-14) plug in here.
- */
-fun interface LocalUpkeep {
-    suspend fun run()
-}
-
-class NoOpLocalUpkeep @Inject constructor() : LocalUpkeep {
-    override suspend fun run() = Unit
-}
-
 /** Deletes local audio files; a missing file is not an error. Injected so tests can use real temp files. */
 fun interface FileDeleter {
     fun delete(path: String)
