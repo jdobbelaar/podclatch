@@ -84,6 +84,10 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
         flow.update { it.copy(downloadAheadPerFeed = count) }
     }
 
+    override suspend fun setAutoDeletePlayedDownloads(enabled: Boolean) {
+        flow.value = flow.value.copy(autoDeletePlayedDownloads = enabled)
+    }
+
     override suspend fun setNotifyNewEpisodes(enabled: Boolean) {
         flow.update { it.copy(notifyNewEpisodes = enabled) }
     }
@@ -181,6 +185,13 @@ class FakeCacheStore : CacheStore {
                 )
             }
         }
+
+    override suspend fun sweepRows(): List<com.podclatch.data.db.SweepRow> = episodes.values
+        .filter {
+            it.status == EpisodeStatus.PLAYED &&
+                (it.downloadState != com.podclatch.data.db.DownloadState.NONE || it.localPath != null)
+        }
+        .map { com.podclatch.data.db.SweepRow(it.id, it.playedAt, it.downloadState, it.localPath) }
 
     override suspend fun feedTitles(feedIds: Collection<Long>): List<com.podclatch.data.db.FeedTitle> =
         feedIds.mapNotNull { id -> feeds[id]?.let { com.podclatch.data.db.FeedTitle(it.id, it.title) } }

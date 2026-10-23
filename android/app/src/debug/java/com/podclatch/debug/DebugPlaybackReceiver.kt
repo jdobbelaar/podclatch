@@ -43,6 +43,7 @@ interface DebugEntryPoint {
  * - `com.podclatch.debug.SET_WIFI_ONLY --ez enabled true|false`
  * - `com.podclatch.debug.SET_DOWNLOAD_AHEAD --ei value <n>`
  * - `com.podclatch.debug.SET_NOTIFY_NEW --ez enabled true|false`
+ * - `com.podclatch.debug.SET_AUTO_DELETE --ez enabled true|false`
  */
 class DebugPlaybackReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -113,6 +114,15 @@ class DebugPlaybackReceiver : BroadcastReceiver() {
                             Log.i(TAG, "SET_NOTIFY_NEW result=invalid")
                         }
                     }
+                    ACTION_SET_AUTO_DELETE -> {
+                        if (intent.hasExtra(EXTRA_ENABLED)) {
+                            val enabled = intent.getBooleanExtra(EXTRA_ENABLED, true)
+                            entry.settings().setAutoDeletePlayedDownloads(enabled)
+                            Log.i(TAG, "SET_AUTO_DELETE result=ok enabled=$enabled")
+                        } else {
+                            Log.i(TAG, "SET_AUTO_DELETE result=invalid")
+                        }
+                    }
                     else -> Log.i(TAG, "unknown action")
                 }
             } catch (e: Exception) {
@@ -168,6 +178,7 @@ class DebugPlaybackReceiver : BroadcastReceiver() {
         const val ACTION_SET_WIFI_ONLY = "com.podclatch.debug.SET_WIFI_ONLY"
         const val ACTION_SET_DOWNLOAD_AHEAD = "com.podclatch.debug.SET_DOWNLOAD_AHEAD"
         const val ACTION_SET_NOTIFY_NEW = "com.podclatch.debug.SET_NOTIFY_NEW"
+        const val ACTION_SET_AUTO_DELETE = "com.podclatch.debug.SET_AUTO_DELETE"
         const val EXTRA_VALUE = "value"
         const val EXTRA_EPISODE_ID = "episode_id"
         const val EXTRA_KIND = "kind"

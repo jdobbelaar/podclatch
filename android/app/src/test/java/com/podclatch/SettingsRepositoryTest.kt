@@ -116,6 +116,20 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun autoDeleteDefaultsToOnAndIsStored() = runBlocking {
+        val repo = repo(File(tmp.root, "auto.preferences_pb"))
+        assertTrue(Settings().autoDeletePlayedDownloads)
+        assertTrue(repo.current().autoDeletePlayedDownloads)
+        repo.setAutoDeletePlayedDownloads(false)
+        assertFalse(repo.current().autoDeletePlayedDownloads)
+        repo.setAutoDeletePlayedDownloads(true)
+        assertTrue(repo.current().autoDeletePlayedDownloads)
+        val text = Settings(authToken = "secret-token-value", autoDeletePlayedDownloads = false).toString()
+        assertFalse(text.contains("secret-token-value"))
+        assertTrue(text.contains("autoDeletePlayedDownloads=false"))
+    }
+
+    @Test
     fun toStringStillRedactsTheTokenWithTheNewKeys() {
         val text = Settings(authToken = "secret-token-value", downloadAheadPerFeed = 5, notifyNewEpisodes = true).toString()
         assertFalse(text.contains("secret-token-value"))

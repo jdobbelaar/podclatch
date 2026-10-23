@@ -126,4 +126,7 @@ object Config {
 
     /** The one fixed id of the new-episodes notification, so a later Sync replaces it. */
     const val NEW_EPISODES_NOTIFICATION_ID = 1002
+
+    /** A Played Episode's download is deleted once it has been Played at least this long (spec section 4). */
+    val PLAYED_DELETE_DELAY: kotlin.time.Duration = kotlin.time.Duration.parse("1h")
 }

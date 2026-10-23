@@ -45,6 +45,9 @@ interface CacheStore {
     /** Every New Episode of every Feed with what the auto-download top-up needs; no order is promised. */
     suspend fun topUpRows(): List<TopUpRow>
 
+    /** Every Played Episode that still has a download of any kind, for the auto-delete sweep. */
+    suspend fun sweepRows(): List<SweepRow>
+
     /** The titles of the given Feeds (a Feed that is not cached is left out). */
     suspend fun feedTitles(feedIds: Collection<Long>): List<FeedTitle>
 
@@ -121,6 +124,8 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
     override suspend fun queueRowOf(id: Long): QueueRow? = episodes.queueRowOf(id)
 
     override suspend fun topUpRows(): List<TopUpRow> = episodes.topUpRows()
+
+    override suspend fun sweepRows(): List<SweepRow> = episodes.sweepRows()
 
     override suspend fun feedTitles(feedIds: Collection<Long>): List<FeedTitle> =
         feedIds.chunked(SQL_VARIABLE_CHUNK).flatMap { feeds.titlesByIds(it) }

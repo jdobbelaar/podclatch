@@ -29,6 +29,7 @@ data class Settings(
     val downloadWifiOnly: Boolean = true,
     val downloadAheadPerFeed: Int = Config.DEFAULT_DOWNLOAD_AHEAD_PER_FEED,
     val notifyNewEpisodes: Boolean = false,
+    val autoDeletePlayedDownloads: Boolean = true,
 ) {
     /** Configured means both the server URL and the token are non-blank. */
     val isConfigured: Boolean get() = serverUrl.isNotBlank() && authToken.isNotBlank()
@@ -36,7 +37,7 @@ data class Settings(
     /** Redacts the token so a log line or exception message can never carry it. */
     override fun toString(): String =
         "Settings(serverUrl=$serverUrl, authToken=***, lastSyncRev=$lastSyncRev, syncIntervalHours=$syncIntervalHours, " +
-            "skipBackSec=$skipBackSec, skipForwardSec=$skipForwardSec, assignedSpeed=$assignedSpeed, speedMode=$speedMode, downloadWifiOnly=$downloadWifiOnly, downloadAheadPerFeed=$downloadAheadPerFeed, notifyNewEpisodes=$notifyNewEpisodes)"
+            "skipBackSec=$skipBackSec, skipForwardSec=$skipForwardSec, assignedSpeed=$assignedSpeed, speedMode=$speedMode, downloadWifiOnly=$downloadWifiOnly, downloadAheadPerFeed=$downloadAheadPerFeed, notifyNewEpisodes=$notifyNewEpisodes, autoDeletePlayedDownloads=$autoDeletePlayedDownloads)"
 }
 
 interface SettingsRepository {
@@ -74,6 +75,9 @@ interface SettingsRepository {
 
     /** Whether a background Sync that brought in new Episodes posts a notification (default false). */
     suspend fun setNotifyNewEpisodes(enabled: Boolean)
+
+    /** Whether the sweep deletes the downloads of Episodes Played for at least an hour (default true). */
+    suspend fun setAutoDeletePlayedDownloads(enabled: Boolean)
 }
 
 /** DataStore (Preferences) in the app's private storage. The token is stored in plain text there, by decision. */
@@ -94,6 +98,7 @@ class DataStoreSettingsRepository @Inject constructor(
             downloadWifiOnly = prefs[DOWNLOAD_WIFI_ONLY] ?: true,
             downloadAheadPerFeed = prefs[DOWNLOAD_AHEAD_PER_FEED] ?: Config.DEFAULT_DOWNLOAD_AHEAD_PER_FEED,
             notifyNewEpisodes = prefs[NOTIFY_NEW_EPISODES] ?: false,
+            autoDeletePlayedDownloads = prefs[AUTO_DELETE_PLAYED] ?: true,
         )
     }
 
@@ -150,6 +155,10 @@ class DataStoreSettingsRepository @Inject constructor(
         dataStore.edit { it[NOTIFY_NEW_EPISODES] = enabled }
     }
 
+    override suspend fun setAutoDeletePlayedDownloads(enabled: Boolean) {
+        dataStore.edit { it[AUTO_DELETE_PLAYED] = enabled }
+    }
+
     private companion object {
         fun modeOf(stored: String?): SpeedMode = SpeedMode.entries.firstOrNull { it.name == stored } ?: SpeedMode.ASSIGNED
         val ASSIGNED_SPEED = floatPreferencesKey("assignedSpeed")
@@ -161,6 +170,7 @@ class DataStoreSettingsRepository @Inject constructor(
         val DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("downloadWifiOnly")
         val DOWNLOAD_AHEAD_PER_FEED = intPreferencesKey("downloadAheadPerFeed")
         val NOTIFY_NEW_EPISODES = booleanPreferencesKey("notifyNewEpisodes")
+        val AUTO_DELETE_PLAYED = booleanPreferencesKey("autoDeletePlayedDownloads")
         val SKIP_BACK_SEC = intPreferencesKey("skipBackSec")
         val SKIP_FORWARD_SEC = intPreferencesKey("skipForwardSec")
     }

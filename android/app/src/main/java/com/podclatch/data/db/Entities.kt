@@ -203,5 +203,18 @@ data class TopUpRow(
     val key: QueueKey get() = QueueKey(episodeId, feedId, feedPriority, listenOrder, publishedAt)
 }
 
+/**
+ * A Played Episode that still has a download (any state but NONE, or a `localPath`), for the auto-delete sweep.
+ * It holds no address and no title.
+ */
+data class SweepRow(
+    val episodeId: Long,
+    val playedAt: Long?,
+    val downloadState: DownloadState,
+    val localPath: String?,
+) {
+    override fun toString() = "SweepRow(episodeId=$episodeId, downloadState=$downloadState)"
+}
+
 /** A Feed's id and title, for the new-episode notification text. */
 data class FeedTitle(val id: Long, val title: String)

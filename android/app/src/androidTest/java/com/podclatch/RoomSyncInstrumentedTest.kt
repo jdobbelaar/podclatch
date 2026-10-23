@@ -389,6 +389,10 @@ private class MemorySettings : SettingsRepository {
         flow.value = flow.value.copy(downloadAheadPerFeed = count)
     }
 
+    override suspend fun setAutoDeletePlayedDownloads(enabled: Boolean) {
+        error("not used")
+    }
+
     override suspend fun setNotifyNewEpisodes(enabled: Boolean) {
         flow.value = flow.value.copy(notifyNewEpisodes = enabled)
     }
