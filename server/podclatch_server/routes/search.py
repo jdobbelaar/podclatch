@@ -24,7 +24,7 @@ def get_search_service(request: Request) -> SearchService:
     state = request.app.state
     with _service_lock:
         if getattr(state, "search_service", None) is None:
-            state.search_service = SearchService()
+            state.search_service = SearchService(url=state.settings.itunes_search_url)
         return state.search_service
 
 

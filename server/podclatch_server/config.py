@@ -10,6 +10,7 @@ from podclatch_server.db import SUPPORTED_SCHEMES, is_supported_url
 DEFAULT_DATABASE_URL = "sqlite:///./podclatch.db"
 DEFAULT_REFRESH_INTERVAL_HOURS = 3.0
 DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 TRUE_VALUES = ("1", "true", "yes", "on")
 FALSE_VALUES = ("", "0", "false", "no", "off")
@@ -26,6 +27,7 @@ class Settings:
     refresh_interval_hours: float = DEFAULT_REFRESH_INTERVAL_HOURS
     log_level: str = DEFAULT_LOG_LEVEL
     test_mode: bool = False
+    itunes_search_url: str = field(default=DEFAULT_ITUNES_SEARCH_URL, repr=False)
 
     def __post_init__(self) -> None:
         if not self.database_url:
@@ -37,6 +39,8 @@ class Settings:
             raise ConfigError("REFRESH_INTERVAL_HOURS must be a positive number")
         if self.log_level not in LOG_LEVELS:
             raise ConfigError(f"LOG_LEVEL must be one of {', '.join(LOG_LEVELS)}")
+        if not self.itunes_search_url.startswith(("http://", "https://")):
+            raise ConfigError("ITUNES_SEARCH_URL must start with http:// or https://")
         if not self.test_mode and not self.token:
             raise ConfigError("PODCLATCH_TOKEN must be set (it is required outside test mode)")
 
@@ -73,4 +77,5 @@ def load_settings(env: Mapping[str, str] | None = None, test_mode: bool | None =
         ),
         log_level=source.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
         test_mode=test_mode,
+        itunes_search_url=source.get("ITUNES_SEARCH_URL", "").strip() or DEFAULT_ITUNES_SEARCH_URL,
     )

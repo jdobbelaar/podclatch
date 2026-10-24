@@ -68,3 +68,33 @@ def test_token_never_in_repr():
     s = load_settings({"PODCLATCH_TOKEN": SECRET})
     assert SECRET not in repr(s)
     assert SECRET not in str(s)
+
+
+ITUNES_DEFAULT = "https://itunes.apple.com/search"
+
+
+@pytest.mark.parametrize("env", [{}, {"ITUNES_SEARCH_URL": ""}, {"ITUNES_SEARCH_URL": "  "}])
+def test_itunes_search_url_defaults_to_the_real_itunes(env):
+    assert load_settings({"PODCLATCH_TOKEN": SECRET, **env}).itunes_search_url == ITUNES_DEFAULT
+
+
+def test_itunes_search_url_can_be_overridden():
+    env = {"PODCLATCH_TOKEN": SECRET, "ITUNES_SEARCH_URL": "http://feedhost:8080/search"}
+    assert load_settings(env).itunes_search_url == "http://feedhost:8080/search"
+
+
+@pytest.mark.parametrize("bad", ["ftp://canary-itunes.invalid/x", "itunes.invalid/search", "//x"])
+def test_invalid_itunes_search_url_names_variable_not_value(bad):
+    with pytest.raises(ConfigError) as exc:
+        load_settings({"PODCLATCH_TOKEN": SECRET, "ITUNES_SEARCH_URL": bad})
+    assert "ITUNES_SEARCH_URL" in str(exc.value)
+    assert bad not in str(exc.value)
+    assert "canary-itunes" not in str(exc.value)
+
+
+def test_create_app_fails_fast_on_invalid_itunes_search_url(monkeypatch):
+    monkeypatch.setenv("PODCLATCH_TOKEN", SECRET)
+    monkeypatch.setenv("ITUNES_SEARCH_URL", "ftp://canary-itunes.invalid/x")
+    with pytest.raises(ConfigError, match="ITUNES_SEARCH_URL") as exc:
+        create_app()
+    assert "canary-itunes" not in str(exc.value)

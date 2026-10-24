@@ -29,3 +29,5 @@ services:
         condition: service_healthy
     environment:
       REFRESH_INTERVAL_HOURS: "24"
+      # Search calls the fake host instead of the real iTunes (only this overlay sets it).
+      ITUNES_SEARCH_URL: http://feedhost:8080/search

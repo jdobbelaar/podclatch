@@ -4,7 +4,8 @@ A library module: no FastAPI. The router in `routes/search.py` calls `SearchServ
 
 Search terms are personal listening interest, so neither the term, the iTunes URL, nor any
 upstream body is ever logged or put in an error message. A failure logs one WARNING that carries
-only a category.
+only a category. The directory URL defaults to the real iTunes and can be set with the
+ITUNES_SEARCH_URL setting (the integration suite points it at a fake host); it is never logged.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from collections.abc import Callable
 
 import httpx
 
+from podclatch_server.config import DEFAULT_ITUNES_SEARCH_URL
 from podclatch_server.feeds import (
     FETCH_TIMEOUT_SECONDS,
     MAX_REDIRECTS,
@@ -29,7 +31,6 @@ logger = logging.getLogger(__name__)
 # httpx logs every request URL (which holds the term) at INFO; keep that out of any log setup.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 RESULT_LIMIT = 25
 CACHE_TTL_SECONDS = 600.0  # 10 minutes (spec 5.2)
 CACHE_MAX_ENTRIES = 100
@@ -62,7 +63,10 @@ class SearchService:
         self,
         client: httpx.Client | None = None,
         clock: Callable[[], float] = time.monotonic,
+        url: str = DEFAULT_ITUNES_SEARCH_URL,
     ) -> None:
+        # `url` comes from the ITUNES_SEARCH_URL setting; like the term, it is never logged.
+        self._url = url
         self._client = client
         self._clock = clock
         self._lock = threading.Lock()
@@ -117,7 +121,7 @@ class SearchService:
         try:
             with client.stream(
                 "GET",
-                ITUNES_SEARCH_URL,
+                self._url,
                 params={"media": "podcast", "term": term, "limit": str(RESULT_LIMIT)},
                 timeout=FETCH_TIMEOUT_SECONDS,
                 follow_redirects=True,

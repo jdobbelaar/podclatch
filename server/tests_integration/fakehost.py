@@ -6,7 +6,12 @@ needs and the server fetches it like any publisher's feed.
     GET  /healthz                     200
     PUT  /_control/feeds/<name>.xml   store the request body as that feed, 204
     GET  /feeds/<name>.xml            200 application/rss+xml with the latest body (query ignored)
-    POST /_control/reset              forget every feed, 204
+    GET  /search                      iTunes-style JSON {"resultCount", "results"} (query ignored);
+                                      503 while search-fail is true
+    PUT  /_control/search.json        store the request body as the /search body, 204
+    POST /_control/search-fail        body `true` or `false`: make /search answer 503, 204
+    GET  /_control/search-count       /search requests since the last reset, as plain text, 200
+    POST /_control/reset              forget every feed and reset the search body, flag, and count
 
 An unknown feed is 404. Log lines hold the method, path, and status only, never a query string,
 because feed URLs can carry secrets.
@@ -24,6 +29,8 @@ _FEED = re.compile(rf"/feeds/({_NAME})")
 
 _lock = threading.Lock()
 _feeds: dict[str, bytes] = {}
+_EMPTY_SEARCH = b'{"resultCount":0,"results":[]}'
+_search: dict = {"body": _EMPTY_SEARCH, "fail": False, "count": 0}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -50,6 +57,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/healthz":
             self._reply(200, b'{"status":"ok"}', "application/json")
             return
+        if path == "/search":
+            with _lock:
+                _search["count"] += 1
+                failing, search_body = _search["fail"], _search["body"]
+            if failing:
+                self._reply(503, b"unavailable", "text/plain")
+            else:
+                self._reply(200, search_body, "text/javascript; charset=utf-8")
+            return
+        if path == "/_control/search-count":
+            with _lock:
+                count = _search["count"]
+            self._reply(200, str(count).encode("ascii"), "text/plain")
+            return
         match = _FEED.fullmatch(path)
         with _lock:
             body = _feeds.get(match.group(1)) if match else None
@@ -59,8 +80,13 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(200, body, "application/rss+xml")
 
     def do_PUT(self) -> None:
-        match = _CONTROL_FEED.fullmatch(self._path())
         body = self._read_body()
+        if self._path() == "/_control/search.json":
+            with _lock:
+                _search["body"] = body
+            self._reply(204)
+            return
+        match = _CONTROL_FEED.fullmatch(self._path())
         if match is None:
             self._reply(404, b"not found", "text/plain")
             return
@@ -69,10 +95,20 @@ class Handler(BaseHTTPRequestHandler):
         self._reply(204)
 
     def do_POST(self) -> None:
-        self._read_body()
-        if self._path() == "/_control/reset":
+        body = self._read_body()
+        path = self._path()
+        if path == "/_control/reset":
             with _lock:
                 _feeds.clear()
+                _search.update(body=_EMPTY_SEARCH, fail=False, count=0)
+            self._reply(204)
+        elif path == "/_control/search-fail":
+            flag = body.strip().lower()
+            if flag not in (b"true", b"false"):
+                self._reply(400, b"expected true or false", "text/plain")
+                return
+            with _lock:
+                _search["fail"] = flag == b"true"
             self._reply(204)
         else:
             self._reply(404, b"not found", "text/plain")
