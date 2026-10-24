@@ -4,11 +4,15 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +27,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -118,12 +123,20 @@ fun SpeedSheet(initial: Float, onConfirm: (value: Float, initial: Float) -> Unit
                 ) { Text("+", style = MaterialTheme.typography.headlineMedium) }
             }
             val sliderDescription = stringResource(R.string.speed_slider_description)
+            val sliderInteraction = remember { MutableInteractionSource() }
             Slider(
                 value = value,
                 onValueChange = { value = normalizeSpeed(it) },
                 valueRange = Config.SPEED_MIN..Config.SPEED_MAX,
                 steps = SPEED_SLIDER_STEPS,
-                modifier = Modifier.fillMaxWidth().testTag("speed_slider").semantics { contentDescription = sliderDescription },
+                interactionSource = sliderInteraction,
+                // The default thumb is 44 dp tall; this one is laid out 48 dp tall around the same drawn bar.
+                thumb = {
+                    Box(Modifier.size(width = 4.dp, height = 48.dp), contentAlignment = Alignment.Center) {
+                        SliderDefaults.Thumb(sliderInteraction, thumbSize = DpSize(4.dp, 44.dp))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("speed_slider").semantics { contentDescription = sliderDescription },
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(

@@ -172,7 +172,12 @@ fun PlayerContent(
                         drag = SeekDrag()
                     },
                     enabled = duration != null,
-                    thumb = { SliderDefaults.Thumb(seekInteraction, thumbSize = DpSize(6.dp, 28.dp), enabled = duration != null) },
+                    thumb = {
+                        Box(Modifier.size(width = 6.dp, height = 48.dp), contentAlignment = Alignment.Center) {
+                            SliderDefaults.Thumb(seekInteraction, thumbSize = DpSize(6.dp, 28.dp), enabled = duration != null)
+                        }
+                    },
+                    interactionSource = seekInteraction,
                     modifier = Modifier.fillMaxSize().semantics { contentDescription = seekDescription },
                 )
             }

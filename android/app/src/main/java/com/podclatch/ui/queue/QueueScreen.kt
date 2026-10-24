@@ -78,14 +78,6 @@ fun QueueScreen(onOpenSettings: () -> Unit, vm: QueueViewModel = hiltViewModel()
             TabTopBar(
                 title = stringResource(R.string.tab_queue),
                 onOpenSettings = onOpenSettings,
-                subtitle = {
-                    Text(
-                        syncStatusText(state.sync),
-                        style = MaterialTheme.typography.labelSmall,
-                        // Not truncated: at font scale 2.0 the whole status wraps onto more lines.
-                        modifier = Modifier.testTag("sync_status"),
-                    )
-                },
                 menuItems = { close ->
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.menu_refresh_all_feeds)) },
@@ -107,6 +99,12 @@ fun QueueScreen(onOpenSettings: () -> Unit, vm: QueueViewModel = hiltViewModel()
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            // Under the top bar, not in it: the bar has a fixed height, and the status wraps at large font sizes.
+            Text(
+                syncStatusText(state.sync),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("sync_status"),
+            )
             state.message?.let { QueueBanner(it, onDismiss = vm::dismissMessage) }
             if (!state.loaded) {
                 val loading = stringResource(R.string.queue_loading_description)
