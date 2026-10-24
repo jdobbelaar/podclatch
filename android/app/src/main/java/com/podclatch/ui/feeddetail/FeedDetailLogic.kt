@@ -1,6 +1,7 @@
 package com.podclatch.ui.feeddetail
 
 import com.podclatch.Config
+import com.podclatch.data.db.DownloadState
 import com.podclatch.data.db.EpisodeStatus
 import com.podclatch.data.db.FeedEpisode
 import com.podclatch.data.db.ListenOrder
@@ -100,9 +101,30 @@ fun episodeRowStyle(status: EpisodeStatus): EpisodeRowStyle = when (status) {
     EpisodeStatus.PLAYED -> EpisodeRowStyle(TitleColor.MUTED, TitleWeight.NORMAL, RowBackground.PLAYED)
 }
 
+/** The status label a row with a failed download shows. */
+enum class DownloadFailureLabel { FAILED, UNAVAILABLE }
+
+/**
+ * "Download failed" for a transient failure, "Download unavailable" for a permanent one (404 or 410),
+ * and null for everything else: only a New Episode whose download state is `FAILED` shows a label.
+ */
+fun downloadFailureLabel(status: EpisodeStatus, state: DownloadState, permanentFailure: Boolean): DownloadFailureLabel? =
+    if (status != EpisodeStatus.NEW || state != DownloadState.FAILED) {
+        null
+    } else if (permanentFailure) {
+        DownloadFailureLabel.UNAVAILABLE
+    } else {
+        DownloadFailureLabel.FAILED
+    }
+
+/** The row menu offers "Retry download" for exactly the Episodes that show a failure label. */
+fun canRetryDownload(status: EpisodeStatus, state: DownloadState): Boolean =
+    status == EpisodeStatus.NEW && state == DownloadState.FAILED
+
 /**
  * The one accessibility description of a row: "<title>, <date>, <duration>, <New or Played>", plus
- * ", <p> percent played" ([percentPlayedLabel]) for a known progress. The duration is left out when unknown.
+ * ", <p> percent played" ([percentPlayedLabel]) for a known progress, plus the download failure label
+ * ([failureLabel]) when there is one. The duration is left out when unknown.
  */
 fun episodeDescription(
     title: String,
@@ -110,12 +132,14 @@ fun episodeDescription(
     duration: String?,
     statusLabel: String,
     percentPlayedLabel: String?,
+    failureLabel: String? = null,
 ): String = buildList {
     add(title)
     add(date)
     if (duration != null) add(duration)
     add(statusLabel)
     if (percentPlayedLabel != null) add(percentPlayedLabel)
+    if (failureLabel != null) add(failureLabel)
 }.joinToString(", ")
 
 /** What the banner says. The screen turns each case into text from `strings.xml`. */

@@ -121,6 +121,8 @@ data class FeedEpisode(
     val durationSec: Int?,
     val status: EpisodeStatus,
     val positionSec: Int,
+    val downloadState: DownloadState = DownloadState.NONE,
+    val downloadPermanentFailure: Boolean = false,
 ) {
     override fun toString() = "FeedEpisode(id=$id, status=$status)"
 }

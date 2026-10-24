@@ -171,7 +171,7 @@ interface EpisodeDao {
      * reverse, applied by the screen's logic. Emits again whenever any of the rows changes.
      */
     @Query(
-        "SELECT id, title, publishedAt, durationSec, status, positionSec FROM episode " +
+        "SELECT id, title, publishedAt, durationSec, status, positionSec, downloadState, downloadPermanentFailure FROM episode " +
             "WHERE feedId = :feedId ORDER BY publishedAt DESC, id DESC",
     )
     fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>>

@@ -1,9 +1,27 @@
 package com.podclatch.ui.player
 
+import com.podclatch.playback.PlaybackError
 import com.podclatch.playback.PlaybackUiState
 
 /** The mini player is visible exactly while an Episode is loaded. */
 fun miniPlayerVisible(state: PlaybackUiState): Boolean = state.episodeId != null
+
+/** The cause of a playback error as the full player words it; the screen maps each to a string resource. */
+enum class PlayerErrorMessage { NETWORK, UNSUPPORTED, UNKNOWN }
+
+/** What the full player shows for a playback error: the message, and whether it offers Retry. */
+data class PlayerErrorUi(val message: PlayerErrorMessage, val canRetry: Boolean)
+
+/**
+ * The mapping from a [PlaybackError] to the full player's message and Retry button: `NETWORK` and `UNKNOWN`
+ * can be retried, `UNSUPPORTED` cannot (the same audio would fail the same way). Null when there is no error.
+ */
+fun playerErrorUi(error: PlaybackError?): PlayerErrorUi? = when (error) {
+    null -> null
+    PlaybackError.NETWORK -> PlayerErrorUi(PlayerErrorMessage.NETWORK, canRetry = true)
+    PlaybackError.UNSUPPORTED -> PlayerErrorUi(PlayerErrorMessage.UNSUPPORTED, canRetry = false)
+    PlaybackError.UNKNOWN -> PlayerErrorUi(PlayerErrorMessage.UNKNOWN, canRetry = true)
+}
 
 /** "m:ss", or "h:mm:ss" from one hour; negative values read as zero. */
 fun formatClock(ms: Long): String {

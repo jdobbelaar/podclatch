@@ -10,6 +10,7 @@ import com.podclatch.data.repo.MarkResult
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.SyncResult
 import com.podclatch.domain.SyncTrigger
+import com.podclatch.download.Downloads
 import com.podclatch.domain.changesOnMarkNew
 import com.podclatch.domain.changesOnMarkPlayed
 import com.podclatch.playback.PlayResult
@@ -87,6 +88,7 @@ class FeedDetailController(
     private val playback: PlaybackController,
     private val scope: CoroutineScope,
     stateScope: CoroutineScope,
+    private val downloads: Downloads? = null,
 ) {
     private data class Local(
         val busy: Boolean = false,
@@ -268,6 +270,27 @@ class FeedDetailController(
             }
             if (result != PlayResult.Started && result != PlayResult.Resumed) {
                 local.update { it.copy(message = FeedDetailMessage.PlayFailed) }
+            }
+        }
+    }
+
+    // ---- Retry download ----
+
+    /**
+     * "Retry download" of a New Episode whose last download ended `FAILED`: one manual download request,
+     * exactly what playing the Episode asks for (it also clears the permanent mark). Anything else is ignored.
+     */
+    fun retryDownload(episodeId: Long) {
+        val episode = uiState.value.episodes.firstOrNull { it.id == episodeId } ?: return
+        if (!canRetryDownload(episode.status, episode.downloadState)) return
+        val downloads = downloads ?: return
+        scope.launch {
+            try {
+                downloads.requestManual(episodeId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                local.update { it.copy(message = FeedDetailMessage.Unexpected) }
             }
         }
     }

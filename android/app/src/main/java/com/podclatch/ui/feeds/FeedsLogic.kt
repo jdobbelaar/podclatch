@@ -24,6 +24,17 @@ fun <T> moveItem(list: List<T>, from: Int, to: Int): List<T> {
     return result
 }
 
+/**
+ * The order after moving [feedId] one place ([delta] is -1 for up, +1 for down): the alternative to a drag.
+ * Null when the Feed is not in [ids] or already at that end of the list.
+ */
+fun reorderByOne(ids: List<Long>, feedId: Long, delta: Int): List<Long>? {
+    val from = ids.indexOf(feedId)
+    val to = from + delta
+    if (from < 0 || to !in ids.indices || delta == 0) return null
+    return moveItem(ids, from, to)
+}
+
 /** What to do when a drag ends. */
 sealed interface DropDecision {
     /** The working order equals the server order (or the gesture was cancelled): send nothing. */

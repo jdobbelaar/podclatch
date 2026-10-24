@@ -19,7 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,7 +56,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -96,7 +99,23 @@ fun FeedsScreen(
         }
     }
     Scaffold(
-        topBar = { TabTopBar(stringResource(R.string.tab_feeds), onOpenSettings) },
+        topBar = {
+            TabTopBar(
+                title = stringResource(R.string.tab_feeds),
+                onOpenSettings = onOpenSettings,
+                menuItems = { close ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.menu_refresh_all_feeds)) },
+                        enabled = !state.gesturesLocked,
+                        onClick = {
+                            close()
+                            vm.refresh()
+                        },
+                        modifier = Modifier.testTag("menu_refresh"),
+                    )
+                },
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onSubscribe,
@@ -121,6 +140,7 @@ fun FeedsScreen(
                 onDragStopped = vm::onDragStopped,
                 onRefresh = vm::refresh,
                 onRequestUnsubscribe = vm::requestUnsubscribe,
+                onMoveByOne = vm::moveByOne,
                 scrollToTopRequests = scrollToTopRequests,
             )
         }
@@ -159,6 +179,7 @@ private fun FeedsList(
     onDragStopped: () -> Unit,
     onRefresh: () -> Boolean,
     onRequestUnsubscribe: (Long) -> Unit,
+    onMoveByOne: (Long, Int) -> Unit,
     scrollToTopRequests: Int,
 ) {
     val locked = state.gesturesLocked
@@ -185,7 +206,7 @@ private fun FeedsList(
                     EmptyState(Modifier.fillParentMaxSize(), loaded = state.items != null, syncing = state.syncRunning)
                 }
             } else {
-                items(items, key = { it.id }) { feed ->
+                itemsIndexed(items, key = { _, feed -> feed.id }) { index, feed ->
                     ReorderableItem(reorderState, key = feed.id) { isDragging ->
                         val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "drag-elevation")
                         Surface(shadowElevation = elevation, tonalElevation = elevation) {
@@ -193,6 +214,9 @@ private fun FeedsList(
                                 FeedBar(
                                     feed = feed,
                                     onOpen = { onOpenFeed(feed.id) },
+                                    onUnsubscribe = { if (!locked) onRequestUnsubscribe(feed.id) },
+                                    onMoveUp = if (index > 0) ({ onMoveByOne(feed.id, -1) }) else null,
+                                    onMoveDown = if (index < items.lastIndex) ({ onMoveByOne(feed.id, 1) }) else null,
                                     handle = {
                                         DragHandle(
                                             feed = feed,
@@ -233,7 +257,17 @@ private fun EmptyState(modifier: Modifier, loaded: Boolean, syncing: Boolean) {
 // ---- One bar ----
 
 @Composable
-private fun FeedBar(feed: FeedListItem, onOpen: () -> Unit, handle: @Composable () -> Unit) {
+private fun FeedBar(
+    feed: FeedListItem,
+    onOpen: () -> Unit,
+    onUnsubscribe: () -> Unit,
+    onMoveUp: (() -> Unit)?,
+    onMoveDown: (() -> Unit)?,
+    handle: @Composable () -> Unit,
+) {
+    val unsubscribeLabel = stringResource(R.string.action_unsubscribe)
+    val moveUpLabel = stringResource(R.string.action_move_up)
+    val moveDownLabel = stringResource(R.string.action_move_down)
     val title = displayTitle(feed.title)
     val description = if (feed.author.isBlank()) {
         stringResource(R.string.feed_row_description_no_author, title, feed.unplayedCount)
@@ -250,7 +284,15 @@ private fun FeedBar(feed: FeedListItem, onOpen: () -> Unit, handle: @Composable 
                 .weight(1f)
                 .heightIn(min = 72.dp)
                 .clickable(onClick = onOpen)
-                .semantics(mergeDescendants = true) { contentDescription = description }
+                .semantics(mergeDescendants = true) {
+                    contentDescription = description
+                    // The swipe and the drag have no gesture-free twin otherwise.
+                    customActions = buildList {
+                        add(CustomAccessibilityAction(unsubscribeLabel) { onUnsubscribe(); true })
+                        if (onMoveUp != null) add(CustomAccessibilityAction(moveUpLabel) { onMoveUp(); true })
+                        if (onMoveDown != null) add(CustomAccessibilityAction(moveDownLabel) { onMoveDown(); true })
+                    }
+                }
                 .testTag("feed_row_${feed.id}")
                 .padding(start = 16.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,

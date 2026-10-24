@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,7 +43,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -75,13 +78,15 @@ fun QueueScreen(onOpenSettings: () -> Unit, vm: QueueViewModel = hiltViewModel()
             TabTopBar(
                 title = stringResource(R.string.tab_queue),
                 onOpenSettings = onOpenSettings,
-                subtitle = {
-                    Text(
-                        syncStatusText(state.sync),
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.testTag("sync_status"),
+                menuItems = { close ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.menu_refresh_all_feeds)) },
+                        enabled = !state.refreshing,
+                        onClick = {
+                            close()
+                            vm.refresh()
+                        },
+                        modifier = Modifier.testTag("menu_refresh"),
                     )
                 },
                 actions = {
@@ -94,6 +99,12 @@ fun QueueScreen(onOpenSettings: () -> Unit, vm: QueueViewModel = hiltViewModel()
         contentWindowInsets = WindowInsets(0),
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            // Under the top bar, not in it: the bar has a fixed height, and the status wraps at large font sizes.
+            Text(
+                syncStatusText(state.sync),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("sync_status"),
+            )
             state.message?.let { QueueBanner(it, onDismiss = vm::dismissMessage) }
             if (!state.loaded) {
                 val loading = stringResource(R.string.queue_loading_description)
@@ -141,7 +152,13 @@ private fun QueueList(state: QueueUiState, vm: QueueViewModel) {
                         onMarkPlayed = { vm.markPlayed(row.episodeId) },
                         onMarkNew = { vm.markNew(row.episodeId) },
                     ) {
-                        QueueItemRow(row, nowPlaying = row.episodeId == state.nowPlayingId, onPlay = { vm.play(row.episodeId) })
+                        QueueItemRow(
+                            row,
+                            nowPlaying = row.episodeId == state.nowPlayingId,
+                            onPlay = { vm.play(row.episodeId) },
+                            onMarkPlayed = { vm.markPlayed(row.episodeId) },
+                            onMarkNew = { vm.markNew(row.episodeId) },
+                        )
                     }
                 }
             }
@@ -152,7 +169,13 @@ private fun QueueList(state: QueueUiState, vm: QueueViewModel) {
 // ---- One row ----
 
 @Composable
-private fun QueueItemRow(row: QueueRow, nowPlaying: Boolean, onPlay: () -> Unit) {
+private fun QueueItemRow(
+    row: QueueRow,
+    nowPlaying: Boolean,
+    onPlay: () -> Unit,
+    onMarkPlayed: () -> Unit,
+    onMarkNew: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val feedName = row.feedTitle.ifBlank { stringResource(R.string.feed_untitled) }
     val time = queueTime(row.durationSec, row.positionSec)
@@ -167,6 +190,9 @@ private fun QueueItemRow(row: QueueRow, nowPlaying: Boolean, onPlay: () -> Unit)
     val description = queueRowDescription(row.title, feedName, timeText, playedText, nowPlayingText)
     val placeholder = ColorPainter(colors.surfaceVariant)
     val id = row.episodeId
+    // The swipe has no gesture-free twin otherwise: these do exactly what the two swipes do.
+    val markPlayedLabel = stringResource(R.string.action_mark_played)
+    val markNewLabel = stringResource(R.string.action_mark_new)
 
     Column(Modifier.background(if (nowPlaying) colors.secondaryContainer else colors.surface)) {
         // One element for a screen reader: the row carries the whole description. Its parts keep their own
@@ -179,6 +205,10 @@ private fun QueueItemRow(row: QueueRow, nowPlaying: Boolean, onPlay: () -> Unit)
                     contentDescription = description
                     role = Role.Button
                     onClick { onPlay(); true }
+                    customActions = listOf(
+                        CustomAccessibilityAction(markPlayedLabel) { onMarkPlayed(); true },
+                        CustomAccessibilityAction(markNewLabel) { onMarkNew(); true },
+                    )
                 }
                 .testTag("queue_item_$id")
                 .pointerInput(onPlay) { detectTapGestures(onTap = { onPlay() }) },

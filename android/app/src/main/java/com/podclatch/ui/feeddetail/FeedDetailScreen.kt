@@ -105,6 +105,15 @@ fun FeedDetailScreen(onBack: () -> Unit, vm: FeedDetailViewModel = hiltViewModel
                 }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.menu_refresh_this_feed)) },
+                        enabled = !state.actionsLocked,
+                        onClick = {
+                            expanded = false
+                            vm.refresh()
+                        },
+                        modifier = Modifier.testTag("menu_refresh"),
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.menu_unsubscribe)) },
                         enabled = !state.actionsLocked,
                         onClick = {
@@ -279,6 +288,7 @@ private fun EpisodeList(state: FeedDetailUiState, vm: FeedDetailViewModel) {
                         onPlay = { vm.play(episode.id) },
                         onMarkPlayed = { vm.markPlayed(episode.id) },
                         onMarkNew = { vm.markNew(episode.id) },
+                        onRetryDownload = { vm.retryDownload(episode.id) },
                     )
                 }
             }
@@ -381,6 +391,7 @@ private fun EpisodeRow(
     onPlay: () -> Unit,
     onMarkPlayed: () -> Unit,
     onMarkNew: () -> Unit,
+    onRetryDownload: () -> Unit,
 ) {
     val played = episode.status == EpisodeStatus.PLAYED
     val style = episodeRowStyle(episode.status)
@@ -403,12 +414,17 @@ private fun EpisodeRow(
     val statusLabel = stringResource(if (played) R.string.episode_status_played else R.string.episode_status_new)
     val percentPlayed = (progress as? EpisodeProgress.Known)?.percent
     val percentLabel = percentPlayed?.let { stringResource(R.string.episode_percent_played, it) }
+    val failure = downloadFailureLabel(episode.status, episode.downloadState, episode.downloadPermanentFailure)
+    val failureText = failure?.let {
+        stringResource(if (it == DownloadFailureLabel.UNAVAILABLE) R.string.episode_download_unavailable else R.string.episode_download_failed)
+    }
     val description = episodeDescription(
         title = episode.title,
         date = date,
         duration = duration,
         statusLabel = statusLabel,
         percentPlayedLabel = percentLabel,
+        failureLabel = failureText,
     )
 
     Row(Modifier.fillMaxWidth().background(background), verticalAlignment = Alignment.Top) {
@@ -459,6 +475,14 @@ private fun EpisodeRow(
                     color = if (played) colors.onSurfaceVariant else colors.primary,
                 )
             }
+            if (failureText != null) {
+                Text(
+                    failureText,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.error,
+                    modifier = Modifier.testTag("episode_download_${episode.id}"),
+                )
+            }
             when (progress) {
                 is EpisodeProgress.Known -> {
                     val progressDescription = percentLabel.orEmpty()
@@ -479,12 +503,18 @@ private fun EpisodeRow(
                 null -> Unit
             }
         }
-        EpisodeMenu(episode, played, onMarkPlayed, onMarkNew)
+        EpisodeMenu(episode, played, onMarkPlayed, onMarkNew, onRetryDownload)
     }
 }
 
 @Composable
-private fun EpisodeMenu(episode: FeedEpisode, played: Boolean, onMarkPlayed: () -> Unit, onMarkNew: () -> Unit) {
+private fun EpisodeMenu(
+    episode: FeedEpisode,
+    played: Boolean,
+    onMarkPlayed: () -> Unit,
+    onMarkNew: () -> Unit,
+    onRetryDownload: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     val menuDescription = stringResource(R.string.episode_menu_description, episode.title)
     Box {
@@ -503,6 +533,16 @@ private fun EpisodeMenu(episode: FeedEpisode, played: Boolean, onMarkPlayed: () 
                 },
                 modifier = Modifier.testTag("menu_toggle_played_${episode.id}"),
             )
+            if (canRetryDownload(episode.status, episode.downloadState)) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.menu_retry_download)) },
+                    onClick = {
+                        expanded = false
+                        onRetryDownload()
+                    },
+                    modifier = Modifier.testTag("menu_retry_download_${episode.id}"),
+                )
+            }
         }
     }
 }

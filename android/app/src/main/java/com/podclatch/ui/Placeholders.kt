@@ -43,6 +43,7 @@ fun TabTopBar(
     onOpenSettings: () -> Unit,
     subtitle: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
+    menuItems: @Composable (close: () -> Unit) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     TopAppBar(
@@ -63,6 +64,7 @@ fun TabTopBar(
                 Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options))
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                menuItems { expanded = false }
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.menu_settings)) },
                     onClick = {
