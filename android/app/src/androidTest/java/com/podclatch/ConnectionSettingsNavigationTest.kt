@@ -66,8 +66,31 @@ class ConnectionSettingsNavigationTest {
 
     private fun res(id: String): BySelector = By.res(id)
 
+    /**
+     * Waits like [UiDevice.wait] but, in short slices, drops the accessibility node cache of this test process
+     * between them. The cache is invalidated by accessibility events from the app, and Compose throttles those
+     * events, so a change (for example the Feeds tab becoming selected) can go unreported and the cache keeps
+     * the old node state for good: the screen shows the new state while every query still sees the old one.
+     * Every query after [clearCache] is fresh from the app, so this waits for the same end state, no weaker.
+     */
+    private fun <T> waitFresh(timeoutMs: Long, condition: androidx.test.uiautomator.SearchCondition<T>): T? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var result: T? = null
+        while (System.currentTimeMillis() < deadline) {
+            val slice = minOf(2_000L, maxOf(1L, deadline - System.currentTimeMillis()))
+            result = device.wait(condition, slice)
+            if (result != null && (result as Any) != false) return result
+            clearCache()
+        }
+        return result
+    }
+
+    private fun clearCache() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) instrumentation.uiAutomation.clearCache()
+    }
+
     private fun wait(selector: BySelector, timeoutMs: Long = 15_000): UiObject2? =
-        device.wait(Until.findObject(selector), timeoutMs)
+        waitFresh(timeoutMs, Until.findObject(selector))
 
     private fun fill(id: String, value: String) {
         click(res(id))
@@ -111,11 +134,11 @@ class ConnectionSettingsNavigationTest {
 
     /** Waits for the exact end state with a fresh query each time, so no UiObject2 outlives a recomposition. */
     private fun awaitPresent(what: String, selector: BySelector, timeoutMs: Long = 15_000) {
-        assertTrue("Not reached within $timeoutMs ms: $what", device.wait(Until.hasObject(selector), timeoutMs))
+        assertTrue("Not reached within $timeoutMs ms: $what", waitFresh(timeoutMs, Until.hasObject(selector)) == true)
     }
 
     private fun awaitGone(what: String, selector: BySelector, timeoutMs: Long = 15_000) {
-        assertTrue("Not reached within $timeoutMs ms: $what", device.wait(Until.gone(selector), timeoutMs))
+        assertTrue("Not reached within $timeoutMs ms: $what", waitFresh(timeoutMs, Until.gone(selector)) == true)
     }
 
     /** Clicks a freshly found object, retrying when a recomposition invalidates it between the find and the click. */
@@ -123,7 +146,7 @@ class ConnectionSettingsNavigationTest {
         var last: Exception? = null
         repeat(5) {
             try {
-                val target = device.wait(Until.findObject(selector), 15_000) ?: throw AssertionError("Not found: $selector")
+                val target = wait(selector) ?: throw AssertionError("Not found: $selector")
                 target.click()
                 return
             } catch (e: androidx.test.uiautomator.StaleObjectException) {
@@ -201,7 +224,7 @@ class ConnectionSettingsNavigationTest {
     private fun backToTheFeedsTab() {
         repeat(3) {
             device.pressBack()
-            if (device.wait(Until.hasObject(By.res("tab_feeds").selected(true)), 4_000)) return
+            if (waitFresh(4_000, Until.hasObject(By.res("tab_feeds").selected(true))) == true) return
         }
         awaitPresent("Feeds tab selected", By.res("tab_feeds").selected(true), timeoutMs = 1_000)
     }
