@@ -76,6 +76,10 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
         flow.update { it.copy(assignedSpeed = speed ?: it.assignedSpeed, speedMode = SpeedMode.ASSIGNED) }
     }
 
+    override suspend fun setAssignedSpeed(speed: Float) {
+        flow.update { it.copy(assignedSpeed = com.podclatch.domain.SettingsChoices.assignedSpeedToStore(speed)) }
+    }
+
     override suspend fun setDownloadWifiOnly(enabled: Boolean) {
         flow.update { it.copy(downloadWifiOnly = enabled) }
     }
@@ -85,7 +89,7 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
     }
 
     override suspend fun setAutoDeletePlayedDownloads(enabled: Boolean) {
-        flow.value = flow.value.copy(autoDeletePlayedDownloads = enabled)
+        flow.update { it.copy(autoDeletePlayedDownloads = enabled) }
     }
 
     override suspend fun setNotifyNewEpisodes(enabled: Boolean) {

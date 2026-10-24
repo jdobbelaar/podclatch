@@ -68,13 +68,13 @@ import com.podclatch.ui.syncStatusText
  * The Sync status line and the Sync-now action of the old placeholder stay in the top bar.
  */
 @Composable
-fun QueueScreen(onOpenConnection: () -> Unit, vm: QueueViewModel = hiltViewModel()) {
+fun QueueScreen(onOpenSettings: () -> Unit, vm: QueueViewModel = hiltViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     Scaffold(
         topBar = {
             TabTopBar(
                 title = stringResource(R.string.tab_queue),
-                onOpenConnection = onOpenConnection,
+                onOpenSettings = onOpenSettings,
                 subtitle = {
                     Text(
                         syncStatusText(state.sync),

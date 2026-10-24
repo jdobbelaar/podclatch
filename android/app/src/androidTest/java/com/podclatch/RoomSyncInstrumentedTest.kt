@@ -381,6 +381,8 @@ private class MemorySettings : SettingsRepository {
 
     override suspend fun assignSpeed(speed: Float?) = Unit
 
+    override suspend fun setAssignedSpeed(speed: Float) = Unit
+
     override suspend fun setDownloadWifiOnly(enabled: Boolean) {
         flow.value = flow.value.copy(downloadWifiOnly = enabled)
     }

@@ -1,8 +1,8 @@
 package com.podclatch.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +19,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,8 +50,7 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * Chooses between nothing (settings not read yet), the connection screen (not configured, or opened
- * from a tab's menu), and the app's navigation (the bottom bar and its destinations).
+ * Chooses between nothing (settings not read yet), the connection screen (not configured), and the app's navigation (the bottom bar and its destinations).
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -77,16 +75,16 @@ fun AppRoot(
     ) {
         when {
             current == null -> Unit
-            !current.isConfigured || connectionState.fromHome ->
+            !current.isConfigured ->
                 ConnectionScreen(connection, connectionState, showRejectedNotice = rejected && !current.isConfigured)
-            else -> MainNav(navController, onOpenConnection = connection::openFromHome, openQueueRequested = openQueueRequested, onOpenQueueHandled = onOpenQueueHandled)
+            else -> MainNav(navController, openQueueRequested = openQueueRequested, onOpenQueueHandled = onOpenQueueHandled)
         }
     }
 }
 
+/** The full-screen connection screen: first run, and after the server rejected the token. */
 @Composable
 fun ConnectionScreen(vm: ConnectionViewModel, state: ConnectionUiState, showRejectedNotice: Boolean) {
-    BackHandler(enabled = state.fromHome) { vm.cancel() }
     Column(
         Modifier
             .fillMaxSize()
@@ -96,74 +94,83 @@ fun ConnectionScreen(vm: ConnectionViewModel, state: ConnectionUiState, showReje
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(stringResource(R.string.connection_title), style = MaterialTheme.typography.headlineSmall)
-        if (showRejectedNotice) {
-            Text(
-                stringResource(R.string.notice_token_rejected),
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.testTag("connection_notice"),
+        ConnectionForm(vm, state, showRejectedNotice)
+    }
+}
+
+/**
+ * The connection form, shared by the connection screen and the Settings screen: the URL, the token with its
+ * show/hide control, Test connection, the message line, Save, and the server-switch confirmation. It lays its
+ * parts out in the caller's column, so the caller owns scrolling and padding.
+ */
+@Composable
+fun ColumnScope.ConnectionForm(
+    vm: ConnectionViewModel,
+    state: ConnectionUiState,
+    showRejectedNotice: Boolean,
+    saveLabel: String = stringResource(R.string.save_continue),
+) {
+    if (showRejectedNotice) {
+        Text(
+            stringResource(R.string.notice_token_rejected),
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.testTag("connection_notice"),
+        )
+    }
+    OutlinedTextField(
+        value = state.url,
+        onValueChange = vm::onUrlChange,
+        label = { Text(stringResource(R.string.server_url_label)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        modifier = Modifier.fillMaxWidth().testTag("server_url"),
+    )
+    val toggleDescription = stringResource(if (state.showToken) R.string.token_hide else R.string.token_show)
+    OutlinedTextField(
+        value = state.token,
+        onValueChange = vm::onTokenChange,
+        label = { Text(stringResource(R.string.token_label)) },
+        singleLine = true,
+        visualTransformation = if (state.showToken) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        trailingIcon = {
+            TextButton(
+                onClick = vm::toggleShowToken,
+                modifier = Modifier.semantics { contentDescription = toggleDescription }.testTag("token_toggle"),
+            ) {
+                Text(stringResource(if (state.showToken) R.string.token_hide_action else R.string.token_show_action))
+            }
+        },
+        modifier = Modifier.fillMaxWidth().testTag("auth_token"),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(
+            onClick = vm::testConnection,
+            enabled = state.canTest,
+            modifier = Modifier.testTag("test_connection"),
+        ) { Text(stringResource(R.string.test_connection)) }
+        if (state.testing) {
+            val description = stringResource(R.string.testing_connection)
+            CircularProgressIndicator(
+                modifier = Modifier.size(32.dp).semantics { contentDescription = description },
             )
         }
-        OutlinedTextField(
-            value = state.url,
-            onValueChange = vm::onUrlChange,
-            label = { Text(stringResource(R.string.server_url_label)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth().testTag("server_url"),
-        )
-        val toggleDescription = stringResource(if (state.showToken) R.string.token_hide else R.string.token_show)
-        OutlinedTextField(
-            value = state.token,
-            onValueChange = vm::onTokenChange,
-            label = { Text(stringResource(R.string.token_label)) },
-            singleLine = true,
-            visualTransformation = if (state.showToken) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            trailingIcon = {
-                TextButton(
-                    onClick = vm::toggleShowToken,
-                    modifier = Modifier.semantics { contentDescription = toggleDescription }.testTag("token_toggle"),
-                ) {
-                    Text(stringResource(if (state.showToken) R.string.token_hide_action else R.string.token_show_action))
-                }
-            },
-            modifier = Modifier.fillMaxWidth().testTag("auth_token"),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = vm::testConnection,
-                enabled = state.canTest,
-                modifier = Modifier.testTag("test_connection"),
-            ) { Text(stringResource(R.string.test_connection)) }
-            if (state.testing) {
-                val description = stringResource(R.string.testing_connection)
-                CircularProgressIndicator(
-                    modifier = Modifier.size(32.dp).semantics { contentDescription = description },
-                )
-            }
-        }
-        // One visible message at a time; a live region so a screen reader announces it.
-        Text(
-            text = state.message?.let { messageText(it) } ?: "",
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics { liveRegion = LiveRegionMode.Polite }
-                .testTag("connection_message"),
-        )
-        Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = vm::save,
-                enabled = state.canSave,
-                modifier = Modifier.testTag("save_continue"),
-            ) { Text(stringResource(R.string.save_continue)) }
-            if (state.fromHome) {
-                OutlinedButton(onClick = vm::cancel, modifier = Modifier.testTag("connection_cancel")) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        }
     }
+    // One visible message at a time; a live region so a screen reader announces it.
+    val savedText = stringResource(R.string.connection_saved)
+    Text(
+        text = state.message?.let { messageText(it) } ?: if (state.saved) savedText else "",
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .testTag("connection_message"),
+    )
+    Spacer(Modifier.height(4.dp))
+    Button(
+        onClick = vm::save,
+        enabled = state.canSave,
+        modifier = Modifier.testTag("save_continue"),
+    ) { Text(saveLabel) }
     if (state.confirmSwitch) {
         AlertDialog(
             onDismissRequest = vm::dismissSwitch,

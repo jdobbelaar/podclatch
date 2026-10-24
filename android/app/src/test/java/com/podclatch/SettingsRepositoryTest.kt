@@ -3,6 +3,7 @@ package com.podclatch
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.podclatch.data.repo.DataStoreSettingsRepository
 import com.podclatch.data.repo.Settings
+import com.podclatch.domain.SpeedMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -135,5 +136,33 @@ class SettingsRepositoryTest {
         assertFalse(text.contains("secret-token-value"))
         assertTrue(text.contains("downloadAheadPerFeed=5"))
         assertTrue(text.contains("notifyNewEpisodes=true"))
+    }
+
+    @Test
+    fun setAssignedSpeedStoresTheSpeedAndLeavesTheModeAlone() = runBlocking<Unit> {
+        val repo = repo(File(tmp.root, "assigned.preferences_pb"))
+        repo.toggleSpeedMode()
+        assertEquals(SpeedMode.NORMAL, repo.current().speedMode)
+        repo.setAssignedSpeed(2.0f)
+        assertEquals(2.0f, repo.current().assignedSpeed)
+        assertEquals(SpeedMode.NORMAL, repo.current().speedMode)
+        repo.toggleSpeedMode()
+        repo.setAssignedSpeed(1.5f)
+        assertEquals(SpeedMode.ASSIGNED, repo.current().speedMode)
+        assertEquals(1.5f, repo.current().assignedSpeed)
+    }
+
+    @Test
+    fun setAssignedSpeedKeepsTheDefaultAndLimitsTheRange() = runBlocking<Unit> {
+        val repo = repo(File(tmp.root, "range.preferences_pb"))
+        repo.setAssignedSpeed(1.25f)
+        assertEquals(1.25f, repo.current().assignedSpeed)
+        repo.setAssignedSpeed(0.44f)
+        assertEquals(0.5f, repo.current().assignedSpeed)
+        repo.setAssignedSpeed(3.04f)
+        assertEquals(3.0f, repo.current().assignedSpeed)
+        repo.setAssignedSpeed(2.0f)
+        repo.setAssignedSpeed(Float.NaN)
+        assertEquals(1.25f, repo.current().assignedSpeed)
     }
 }

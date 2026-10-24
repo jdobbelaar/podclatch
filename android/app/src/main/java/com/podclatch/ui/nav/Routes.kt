@@ -16,6 +16,10 @@ data object Subscribe
 @Serializable
 data class FeedDetail(val feedId: Long)
 
+/** Settings: a full-screen destination above the tabs, with no bottom bar (the mini player stays). */
+@Serializable
+data object Settings
+
 /** The full player: a full-screen destination above the tabs, with neither bottom bar nor mini player. */
 @Serializable
 data object Player
