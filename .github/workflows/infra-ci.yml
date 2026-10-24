@@ -1,0 +1,22 @@
+name: Infra CI
+
+# Static checks of the CloudFormation templates. No AWS account, credentials, or secret is used.
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-ci.yml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx cfn-lint==1.58.0 infra/bootstrap.yaml infra/app.yaml
+      - run: uv run --no-project --with pytest --with pyyaml pytest infra/tests
