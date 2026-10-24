@@ -108,4 +108,22 @@ class SettingsControllerTest {
         assertEquals(false, s.toString().contains(TEST_TOKEN))
         assertEquals(false, Settings(authToken = TEST_TOKEN).toString().contains(TEST_TOKEN))
     }
+
+    @Test
+    fun concurrentWritesToDifferentSettingsAreNeverLost() {
+        repeat(200) { round ->
+            val fake = FakeSettings()
+            val c = SettingsController(scope, fake)
+            c.setWifiOnly(false)
+            c.setAutoDelete(false)
+            c.setNotifyNewEpisodes(true)
+            c.setSyncInterval(6)
+            c.setDownloadAhead(7)
+            c.setAssignedSpeed(2.0f)
+            awaitState(c.uiState, "all six writes, round $round") {
+                it != null && !it.wifiOnly && !it.autoDelete && it.notifyNewEpisodes && it.syncIntervalHours == 6 &&
+                    it.downloadAhead == 7 && it.assignedSpeed == 2.0f
+            }
+        }
+    }
 }

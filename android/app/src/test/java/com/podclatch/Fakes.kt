@@ -47,23 +47,23 @@ class FakeSettings(initial: Settings = Settings(serverUrl = TEST_URL, authToken 
     override val settings: Flow<Settings> = flow
 
     override suspend fun saveConnection(serverUrl: String, authToken: String) {
-        flow.value = flow.value.copy(serverUrl = serverUrl, authToken = authToken)
+        flow.update { it.copy(serverUrl = serverUrl, authToken = authToken) }
     }
 
     override suspend fun clearToken() {
-        flow.value = flow.value.copy(authToken = "")
+        flow.update { it.copy(authToken = "") }
     }
 
     override suspend fun setLastSyncRev(rev: Long) {
-        flow.value = flow.value.copy(lastSyncRev = rev)
+        flow.update { it.copy(lastSyncRev = rev) }
     }
 
     override suspend fun setSyncIntervalHours(hours: Int) {
-        flow.value = flow.value.copy(syncIntervalHours = hours)
+        flow.update { it.copy(syncIntervalHours = hours) }
     }
 
     override suspend fun setSkipIntervals(backSec: Int, forwardSec: Int) {
-        flow.value = flow.value.copy(skipBackSec = backSec, skipForwardSec = forwardSec)
+        flow.update { it.copy(skipBackSec = backSec, skipForwardSec = forwardSec) }
     }
 
     override suspend fun toggleSpeedMode() {
@@ -497,11 +497,11 @@ class FakePlaybackController(private val knownIds: Set<Long> = emptySet()) : Pla
     }
 
     override fun pause() {
-        flow.value = flow.value.copy(isPlaying = false)
+        flow.update { it.copy(isPlaying = false) }
     }
 
     override fun resume() {
-        if (flow.value.episodeId != null) flow.value = flow.value.copy(isPlaying = true)
+        flow.update { if (it.episodeId != null) it.copy(isPlaying = true) else it }
     }
 
     /** What [currentPositionMs] answers; a test sets it to move the playhead. */
