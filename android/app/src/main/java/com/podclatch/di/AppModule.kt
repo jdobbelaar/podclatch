@@ -28,7 +28,11 @@ import com.podclatch.domain.LoadedEpisodeSource
 import com.podclatch.domain.LocalUpkeep
 import com.podclatch.domain.NewEpisodeNotificationStep
 import com.podclatch.domain.NewEpisodeNotifier
+import com.podclatch.domain.LocalHostClassifier
+import com.podclatch.domain.LocalNetwork
+import com.podclatch.domain.LocalNetworkAccess
 import com.podclatch.domain.OrderedLocalUpkeep
+import com.podclatch.domain.SystemHostResolver
 import com.podclatch.domain.ServerUrlValidator
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.TokenRejection
@@ -106,6 +110,17 @@ object AppModule {
     @Provides @Singleton
     fun urlValidator(@ApplicationContext context: Context): ServerUrlValidator =
         ServerUrlValidator(isDebuggable = context.isDebuggable())
+
+    @Provides @Singleton
+    fun localNetworkAccess(@ApplicationContext context: Context): LocalNetworkAccess = object : LocalNetworkAccess {
+        override val sdkInt: Int get() = android.os.Build.VERSION.SDK_INT
+        override fun isGranted(): Boolean =
+            androidx.core.content.ContextCompat.checkSelfPermission(context, LocalNetwork.PERMISSION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    @Provides @Singleton
+    fun localHostClassifier(): LocalHostClassifier = LocalHostClassifier(SystemHostResolver)
 
     @Provides @Singleton
     fun workManager(@ApplicationContext context: Context): WorkManager = WorkManager.getInstance(context)

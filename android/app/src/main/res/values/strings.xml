@@ -245,4 +245,11 @@
     <string name="action_unsubscribe">Unsubscribe</string>
     <string name="action_move_up">Move up</string>
     <string name="action_move_down">Move down</string>
+    <string name="local_network_title">Local network access</string>
+    <string name="local_network_rationale">PodClatch needs access to the local network to reach the server at %1$s.</string>
+    <string name="local_network_continue">Continue</string>
+    <string name="local_network_refused">Local network access (ACCESS_LOCAL_NETWORK) was not allowed. Servers on the local network will not work without it.</string>
+    <string name="local_network_refused_final">Local network access (ACCESS_LOCAL_NETWORK) was not allowed, and Android will not ask again. Servers on the local network will not work without it. Allow it in the app settings.</string>
+    <string name="local_network_retry">Try again</string>
+    <string name="local_network_open_settings">Open app settings</string>
 </resources>

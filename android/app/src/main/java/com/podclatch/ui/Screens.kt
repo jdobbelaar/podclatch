@@ -1,6 +1,20 @@
 package com.podclatch.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.ActivityCompat
+import com.podclatch.domain.LocalNetwork
+import com.podclatch.domain.LocalNetworkFlow
+import com.podclatch.domain.LocalNetworkPhase
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -117,6 +131,7 @@ fun ColumnScope.ConnectionForm(
             modifier = Modifier.testTag("connection_notice"),
         )
     }
+    LocalNetworkPermission(vm.localNetwork)
     OutlinedTextField(
         value = state.url,
         onValueChange = vm::onUrlChange,
@@ -158,13 +173,28 @@ fun ColumnScope.ConnectionForm(
     }
     // One visible message at a time; a live region so a screen reader announces it.
     val savedText = stringResource(R.string.connection_saved)
+    val phase by vm.localNetwork.phase.collectAsState()
+    val refused = phase as? LocalNetworkPhase.Refused
     Text(
-        text = state.message?.let { messageText(it) } ?: if (state.saved) savedText else "",
+        text = when {
+            refused != null -> stringResource(if (refused.canAskAgain) R.string.local_network_refused else R.string.local_network_refused_final)
+            else -> state.message?.let { messageText(it) } ?: if (state.saved) savedText else ""
+        },
         modifier = Modifier
             .fillMaxWidth()
             .semantics { liveRegion = LiveRegionMode.Polite }
             .testTag("connection_message"),
     )
+    if (refused != null) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = vm.localNetwork::retry, modifier = Modifier.testTag("local_network_retry")) {
+                Text(stringResource(R.string.local_network_retry))
+            }
+            TextButton(onClick = vm.localNetwork::openAppSettings, modifier = Modifier.testTag("local_network_open_settings")) {
+                Text(stringResource(R.string.local_network_open_settings))
+            }
+        }
+    }
     Spacer(Modifier.height(4.dp))
     Button(
         onClick = vm::save,
@@ -186,6 +216,65 @@ fun ColumnScope.ConnectionForm(
             },
         )
     }
+}
+
+/**
+ * The Android side of the `ACCESS_LOCAL_NETWORK` flow: the rationale dialog, the system request, and the
+ * app settings page. The state machine ([LocalNetworkFlow]) decides; this only shows and launches.
+ */
+@Composable
+private fun LocalNetworkPermission(flow: LocalNetworkFlow) {
+    val context = LocalContext.current
+    val phase by flow.phase.collectAsState()
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val activity = context.findActivity()
+        val canAskAgain = activity != null &&
+            ActivityCompat.shouldShowRequestPermissionRationale(activity, LocalNetwork.PERMISSION)
+        flow.onResult(granted, canAskAgain)
+    }
+    val requesting = phase as? LocalNetworkPhase.Requesting
+    LaunchedEffect(requesting) {
+        if (requesting != null && !requesting.launched) {
+            flow.requestLaunched()
+            launcher.launch(LocalNetwork.PERMISSION)
+        }
+    }
+    LaunchedEffect(flow) {
+        flow.openSettings.collect {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+            context.startActivity(intent)
+        }
+    }
+    val rationale = phase as? LocalNetworkPhase.Rationale
+    if (rationale != null) {
+        AlertDialog(
+            onDismissRequest = flow::cancel,
+            modifier = Modifier.semantics { testTagsAsResourceId = true },
+            title = { Text(stringResource(R.string.local_network_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.local_network_rationale, rationale.hostPort),
+                    modifier = Modifier.testTag("local_network_rationale"),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = flow::continueToRequest, modifier = Modifier.testTag("local_network_continue")) {
+                    Text(stringResource(R.string.local_network_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = flow::cancel, modifier = Modifier.testTag("local_network_cancel")) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable

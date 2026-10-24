@@ -33,6 +33,7 @@ class ManifestTest {
         assertEquals(
             setOf(
                 "android.permission.INTERNET",
+                "android.permission.ACCESS_LOCAL_NETWORK",
                 "android.permission.FOREGROUND_SERVICE",
                 "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
                 "android.permission.POST_NOTIFICATIONS",
@@ -40,6 +41,17 @@ class ManifestTest {
             ),
             main.children("uses-permission").map { it.attr("name") }.toSet(),
         )
+    }
+
+    @Test
+    fun theMergedDebugAndReleaseManifestsDeclareTheLocalNetworkPermission() {
+        for (variant in listOf("debug", "release")) {
+            val name = variant.replaceFirstChar { it.uppercase() }
+            val file = File("build/intermediates/merged_manifests/$variant/process${name}Manifest/AndroidManifest.xml")
+            assertTrue("$variant merged manifest exists: ${file.path}", file.exists())
+            val names = parse(file.path).children("uses-permission").map { it.attr("name") }
+            assertTrue("$variant declares ACCESS_LOCAL_NETWORK", "android.permission.ACCESS_LOCAL_NETWORK" in names)
+        }
     }
 
     @Test
