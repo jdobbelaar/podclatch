@@ -7,7 +7,13 @@ import com.podclatch.data.repo.ConnectionTestResult
 import com.podclatch.data.repo.SaveResult
 import com.podclatch.data.repo.Settings
 import com.podclatch.data.repo.SettingsRepository
+import com.podclatch.domain.LocalHostClassifier
+import com.podclatch.domain.LocalNetworkAccess
+import com.podclatch.domain.LocalNetworkFlow
+import com.podclatch.domain.ServerUrlValidator
 import com.podclatch.domain.TokenRejection
+import com.podclatch.domain.UrlResult
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -51,9 +57,15 @@ class ConnectionViewModel @Inject constructor(
     private val connection: ConnectionRepository,
     private val settings: SettingsRepository,
     tokenRejection: TokenRejection,
+    private val urlValidator: ServerUrlValidator,
+    access: LocalNetworkAccess,
+    classifier: LocalHostClassifier,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ConnectionUiState())
     val state: StateFlow<ConnectionUiState> = _state.asStateFlow()
+
+    /** The `ACCESS_LOCAL_NETWORK` flow of Test connection (dialog, system request, refusal). */
+    val localNetwork = LocalNetworkFlow(viewModelScope, access, classifier, proceed = ::runTest)
 
     /** Shows the "rejected" notice above the fields. */
     val tokenRejected: StateFlow<Boolean> = tokenRejection.rejected
@@ -71,15 +83,33 @@ class ConnectionViewModel @Inject constructor(
     }
 
     // An edit makes the last result stale, so it is cleared along with the Save enablement.
-    fun onUrlChange(value: String) = _state.update { it.copy(url = value, message = null, saved = false) }
+    fun onUrlChange(value: String) {
+        localNetwork.reset()
+        _state.update { it.copy(url = value, message = null, saved = false) }
+    }
 
-    fun onTokenChange(value: String) = _state.update { it.copy(token = value, message = null, saved = false) }
+    fun onTokenChange(value: String) {
+        localNetwork.reset()
+        _state.update { it.copy(token = value, message = null, saved = false) }
+    }
 
     fun toggleShowToken() = _state.update { it.copy(showToken = !it.showToken) }
 
+    /** Test connection: asks for local network access first when the address needs it, then tests. */
     fun testConnection() {
         val current = _state.value
         if (!current.canTest) return
+        localNetwork.reset()
+        _state.update { it.copy(testing = true, message = null, saved = false) }
+        val valid = urlValidator.validate(current.url) as? UrlResult.Valid
+        val host = valid?.url?.toHttpUrlOrNull()?.host
+        localNetwork.begin(host, valid?.displayHost) { asked ->
+            if (asked) _state.update { it.copy(testing = false) }
+        }
+    }
+
+    private fun runTest() {
+        val current = _state.value
         _state.update { it.copy(testing = true, message = null, saved = false) }
         viewModelScope.launch {
             val result = connection.test(current.url, current.token)

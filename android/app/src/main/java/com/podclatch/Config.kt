@@ -144,4 +144,7 @@ object Config {
 
     /** Changes to the browse tree within this window are told to subscribed clients once per node. */
     const val BROWSE_NOTIFY_DEBOUNCE_MS = 300L
+
+    /** A hostname lookup for the local-network check gives up after this long; the host then counts as not local. */
+    const val LOCAL_NETWORK_LOOKUP_TIMEOUT_MS = 3_000L
 }
