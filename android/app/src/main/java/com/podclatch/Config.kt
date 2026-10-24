@@ -129,4 +129,10 @@ object Config {
 
     /** A Played Episode's download is deleted once it has been Played at least this long (spec section 4). */
     val PLAYED_DELETE_DELAY: kotlin.time.Duration = kotlin.time.Duration.parse("1h")
+
+    /** The Android Auto browse tree lists at most this many New Episodes of one Feed (the Queue has no cap). */
+    const val BROWSE_FEED_EPISODE_CAP = 100
+
+    /** Changes to the browse tree within this window are told to subscribed clients once per node. */
+    const val BROWSE_NOTIFY_DEBOUNCE_MS = 300L
 }

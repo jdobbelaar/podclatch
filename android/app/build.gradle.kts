@@ -27,6 +27,11 @@ android {
 
     sourceSets.getByName("androidTest").assets.directories.add("$projectDir/schemas")
 
+    lint {
+        // Voice search in the car is deliberately not offered (US-16: no search, no text or voice input while driving).
+        disable += "MissingIntentFilterForMediaSearch"
+    }
+
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
@@ -49,6 +54,11 @@ kotlin {
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// ManifestTest inspects the merged manifests, so the unit tests need them built first.
+tasks.matching { it.name == "testDebugUnitTest" || it.name == "testReleaseUnitTest" }.configureEach {
+    dependsOn("processDebugManifest", "processReleaseManifest")
 }
 
 dependencies {

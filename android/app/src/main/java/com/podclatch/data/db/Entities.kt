@@ -218,3 +218,36 @@ data class SweepRow(
 
 /** A Feed's id and title, for the new-episode notification text. */
 data class FeedTitle(val id: Long, val title: String)
+
+/**
+ * One Episode as the Android Auto browse tree needs it: where it sorts and what it shows, and no audio
+ * address. [toString] leaves out the titles and the artwork addresses.
+ */
+data class BrowseRow(
+    val episodeId: Long,
+    val feedId: Long,
+    val feedPriority: Int,
+    val listenOrder: ListenOrder,
+    val publishedAt: Long,
+    val title: String,
+    val feedTitle: String,
+    /** The Episode's own artwork address, or null. */
+    val artworkUrl: String?,
+    val feedArtworkUrl: String,
+    val durationSec: Int?,
+) {
+    val key: QueueKey get() = QueueKey(episodeId, feedId, feedPriority, listenOrder, publishedAt)
+
+    override fun toString() = "BrowseRow(episodeId=$episodeId, feedId=$feedId)"
+}
+
+/** The columns that decide which Episode to resume. It holds no address and no title. */
+data class ResumeRow(
+    val episodeId: Long,
+    val status: EpisodeStatus,
+    val positionSec: Int,
+    val stateUpdatedAt: Long,
+)
+
+/** A New Episode's id and Feed, to tell which Feed's list of New Episodes changed. */
+data class NewEpisodeRef(val episodeId: Long, val feedId: Long)

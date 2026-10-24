@@ -22,15 +22,19 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
+import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.SessionError
 import androidx.media3.session.MediaSession
 import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.podclatch.Config
 import com.podclatch.MainActivity
 import com.podclatch.R
 import com.podclatch.data.db.CacheStore
 import com.podclatch.data.db.EpisodeStatus
+import com.podclatch.data.repo.BrowseRepository
 import com.podclatch.data.repo.EpisodeStateRepository
 import com.podclatch.data.repo.QueueRepository
 import com.podclatch.data.repo.SettingsRepository
@@ -60,7 +64,7 @@ import javax.inject.Inject
  * Hosts the one ExoPlayer and its media session (shared decision 2): it plays in the background as a
  * foreground service with a media notification, and answers lock-screen, headset, and Bluetooth keys.
  * It reads Room and DataStore only through [EpisodeMediaResolver] and [SettingsRepository]; it never calls
- * the PodClatch API. The browse tree is not built here (that is the Android Auto story).
+ * the PodClatch API. The Android Auto browse tree is served from Room through [BrowseTree].
  */
 @OptIn(markerClass = [UnstableApi::class])
 @AndroidEntryPoint
@@ -73,6 +77,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var store: CacheStore
     @Inject lateinit var stateRepository: EpisodeStateRepository
     @Inject lateinit var queueRepository: QueueRepository
+    @Inject lateinit var browseRepository: BrowseRepository
     @Inject lateinit var syncEngine: SyncEngine
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
@@ -82,6 +87,29 @@ class PlaybackService : MediaLibraryService() {
     private var speedJob: Job? = null
     private var recorder: ProgressRecorder? = null
     private var watcher: ExternalChangeWatcher? = null
+    private var browseNotifier: BrowseChangeNotifier? = null
+
+    /** The Android Auto browse tree, read from Room only (it never calls the PodClatch API). */
+    private val browseTree by lazy {
+        BrowseTree(
+            queue = browseRepository::queue,
+            feeds = browseRepository::feeds,
+            newEpisodesOfFeed = browseRepository::newEpisodesOfFeed,
+            rootTitle = getString(R.string.app_name),
+            queueTitle = getString(R.string.tab_queue),
+            feedsTitle = getString(R.string.tab_feeds),
+            feedEpisodeCap = Config.BROWSE_FEED_EPISODE_CAP,
+        )
+    }
+
+    private val resumer by lazy {
+        PlaybackResumer(
+            inProgress = browseRepository::inProgress,
+            queue = queueRepository::queueKeys,
+            resolve = resolver::resolve,
+            onPlayRequested = { id -> appScope.launch { downloadStarter.onPlayRequested(id) } },
+        )
+    }
 
     @Volatile private var skipBackSec = Config.DEFAULT_SKIP_BACK_SEC
 
@@ -97,6 +125,7 @@ class PlaybackService : MediaLibraryService() {
                 .build(),
         )
         ensureSession()
+        startBrowseNotifier()
         scope.launch {
             settings.settings.map { it.skipBackSec to it.skipForwardSec }.distinctUntilChanged().collect { (back, forward) ->
                 skipBackSec = back
@@ -104,6 +133,32 @@ class PlaybackService : MediaLibraryService() {
                 session?.setMediaButtonPreferences(skipButtons())
             }
         }
+    }
+
+    /** Tells subscribed clients (Android Auto) when the children of a browse node changed, once per node per burst. */
+    private fun startBrowseNotifier() {
+        browseNotifier = BrowseChangeNotifier(
+            scope = scope,
+            queue = browseRepository.queueSignature(),
+            feeds = browseRepository.feedsSignature(),
+            newEpisodesByFeed = browseRepository.newEpisodesByFeed(),
+            windowMs = Config.BROWSE_NOTIFY_DEBOUNCE_MS,
+            notify = { node ->
+                val current = session
+                if (current != null && current.getSubscribedControllers(node).isNotEmpty()) {
+                    scope.launch {
+                        val count = try {
+                            browseTree.children(node, 0, Int.MAX_VALUE)?.size ?: 0
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            0
+                        }
+                        session?.notifyChildrenChanged(node, count, null)
+                    }
+                }
+            },
+        ).also { it.start() }
     }
 
     /** Builds the player and the session if there are none (again after the task-removal teardown). */
@@ -282,6 +337,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        browseNotifier?.close()
+        browseNotifier = null
         scope.cancel()
         releaseSession()
         super.onDestroy()
@@ -360,10 +417,73 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Resolves the id-only items the controller sends. `onGetLibraryRoot` and `onGetChildren` are not
-     * overridden: Media3's "not supported" answers stand until the browse tree exists.
+     * Resolves the id-only items the controller sends, answers the Android Auto browse tree (from Room
+     * only), and resumes the last Episode after the process died. Search is not offered: `onSearch` and
+     * `onGetSearchResult` keep Media3's "not supported" answers.
      */
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<MediaItem>> = Futures.immediateFuture(
+            // No params go back: nothing in the root enables search, voice input, or a "recent" list.
+            if (params?.isRecent == true) {
+                LibraryResult.ofError(SessionError.ERROR_NOT_SUPPORTED)
+            } else {
+                LibraryResult.ofItem(browseTree.root().toMediaItem(), null)
+            },
+        )
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String,
+        ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+            val item = browseTree.item(mediaId)
+            if (item == null) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE) else LibraryResult.ofItem(item.toMediaItem(), null)
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
+            val children = browseTree.children(parentId, page, pageSize)
+            if (children == null) {
+                LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+            } else {
+                LibraryResult.ofItemList(children.map { it.toMediaItem() }, null)
+            }
+        }
+
+        override fun onSubscribe(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<Void>> = scope.future {
+            val known = parentId == BrowseIds.ROOT || parentId == BrowseIds.QUEUE || parentId == BrowseIds.FEEDS ||
+                BrowseIds.feedIdOf(parentId) != null
+            if (known) LibraryResult.ofVoid() else LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+        }
+
+        /**
+         * The process died and a Play key, Android Auto, or the system asks to resume: the Episode the user
+         * last left unfinished, else the first Queue item, else nothing (the future fails and nothing plays).
+         */
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            isForPlayback: Boolean,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+            val target = resumer.resume(isForPlayback) ?: throw UnsupportedOperationException("Nothing to resume")
+            MediaSession.MediaItemsWithStartPosition(listOf(mediaItemOf(target.episode)), 0, target.startPositionMs)
+        }
+
         /**
          * Next and Previous keys skip forward and back (the player advertises neither, so Media3 would
          * ignore them). Every other key keeps Media3's default handling.

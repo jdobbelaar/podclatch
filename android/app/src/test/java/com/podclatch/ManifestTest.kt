@@ -60,8 +60,51 @@ class ManifestTest {
     }
 
     @Test
+    fun theApplicationDeclaresAndroidAutoAsAMediaApp() {
+        val meta = application.children("meta-data").single { it.attr("name") == "com.google.android.gms.car.application" }
+        assertEquals("@xml/automotive_app_desc", meta.attr("resource"))
+        val desc = parse("src/main/res/xml/automotive_app_desc.xml")
+        assertEquals("automotiveApp", desc.tagName)
+        assertEquals("media", desc.children("uses").single().getAttribute("name"))
+    }
+
+    @Test
+    fun theMediaButtonReceiverIsDeclaredForTheMediaButtonAction() {
+        val receiver = application.children("receiver").single()
+        assertEquals("androidx.media3.session.MediaButtonReceiver", receiver.attr("name"))
+        assertEquals("true", receiver.attr("exported"))
+        val actions = receiver.children("intent-filter").single().children("action").map { it.attr("name") }
+        assertEquals(listOf("android.intent.action.MEDIA_BUTTON"), actions)
+    }
+
+    /** The merged manifests (`processDebugManifest` and `processReleaseManifest` output; the unit-test tasks depend on them). */
+    @Test
+    fun theMergedDebugAndReleaseManifestsKeepTheAndroidAutoDeclarations() {
+        for (variant in listOf("debug", "release")) {
+            val name = variant.replaceFirstChar { it.uppercase() }
+            val file = File("build/intermediates/merged_manifests/$variant/process${name}Manifest/AndroidManifest.xml")
+            assertTrue("$variant merged manifest exists: ${file.path}", file.exists())
+            val app = parse(file.path).children("application").single()
+            val meta = app.children("meta-data").single { it.attr("name") == "com.google.android.gms.car.application" }
+            assertEquals("$variant: car metadata", "@xml/automotive_app_desc", meta.attr("resource"))
+            val service = app.children("service").single { it.attr("name") == "com.podclatch.playback.PlaybackService" }
+            assertEquals("$variant: exported", "true", service.attr("exported"))
+            assertEquals("$variant: foreground type", "mediaPlayback", service.attr("foregroundServiceType"))
+            val actions = service.children("intent-filter").flatMap { it.children("action") }.map { it.attr("name") }.toSet()
+            assertEquals(
+                setOf("androidx.media3.session.MediaLibraryService", "android.media.browse.MediaBrowserService"),
+                actions,
+            )
+            val receiver = app.children("receiver").single { it.attr("name") == "androidx.media3.session.MediaButtonReceiver" }
+            val receiverActions = receiver.children("intent-filter").flatMap { it.children("action") }.map { it.attr("name") }
+            assertEquals("$variant: media button action", listOf("android.intent.action.MEDIA_BUTTON"), receiverActions)
+            assertEquals("$variant: debug receiver only in debug", variant == "debug", app.children("receiver").any { it.attr("name").endsWith("DebugPlaybackReceiver") })
+        }
+    }
+
+    @Test
     fun theMainManifestHasNoDebugReceiverAndPointsAtTheNetworkConfig() {
-        assertTrue(application.children("receiver").isEmpty())
+        assertTrue(application.children("receiver").none { it.attr("name").contains("debug", ignoreCase = true) })
         assertFalse(File("src/main/AndroidManifest.xml").readText().contains("debug", ignoreCase = true))
         assertEquals("@xml/network_security_config", application.attr("networkSecurityConfig"))
     }
