@@ -1,7 +1,12 @@
 package com.podclatch.playback
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import android.net.Uri
 import android.os.Build
 import android.view.KeyEvent
@@ -49,6 +54,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -88,6 +94,9 @@ class PlaybackService : MediaLibraryService() {
     private var recorder: ProgressRecorder? = null
     private var watcher: ExternalChangeWatcher? = null
     private var browseNotifier: BrowseChangeNotifier? = null
+
+    /** True once something started the service with a start command (a Play key), not only a bind. */
+    private var startedWithStartCommand = false
 
     /** The Android Auto browse tree, read from Room only (it never calls the PodClatch API). */
     private val browseTree by lazy {
@@ -480,7 +489,12 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             isForPlayback: Boolean,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
-            val target = resumer.resume(isForPlayback) ?: throw UnsupportedOperationException("Nothing to resume")
+            val target = resumer.resume(isForPlayback)
+            if (target == null) {
+                if (isForPlayback) endIfNothingIsLoaded()
+                throw IllegalStateException("Nothing to resume")
+            }
+            startedWithStartCommand = false // Media3 takes the foreground with the media notification
             MediaSession.MediaItemsWithStartPosition(listOf(mediaItemOf(target.episode)), 0, target.startPositionMs)
         }
 
@@ -531,6 +545,50 @@ class PlaybackService : MediaLibraryService() {
             noteSwitchFrom(resolved.firstOrNull()?.mediaId)
             MediaSession.MediaItemsWithStartPosition(resolved, index, position)
         }
+    }
+
+    /**
+     * A Play key started this service with `startForegroundService` (the media button receiver does that)
+     * and there was nothing to resume. The system requires `startForeground` after such a start, and ends
+     * the app with `ForegroundServiceDidNotStartInTimeException` if it does not come (also if the service
+     * is stopped first). With nothing to play there is no media notification, so the service goes to the
+     * foreground with a bare placeholder at once, and a moment later (after Media3 has finished handling
+     * the failed resumption) leaves the foreground again and stops. If something was loaded meanwhile, it
+     * stays. A service that was only bound (a browser, a controller) is not touched.
+     */
+    private fun endIfNothingIsLoaded() {
+        if (!startedWithStartCommand) return
+        startedWithStartCommand = false
+        try {
+            val channel = NotificationChannel(Config.PLAYBACK_CHANNEL_ID, getString(R.string.playback_channel_name), NotificationManager.IMPORTANCE_LOW)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            val placeholder = NotificationCompat.Builder(this, Config.PLAYBACK_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_play)
+                .setContentTitle(getString(R.string.app_name))
+                .setSilent(true)
+                .build()
+            ServiceCompat.startForeground(
+                this,
+                Config.PLAYBACK_NOTIFICATION_ID,
+                placeholder,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Going to the foreground without an Episode failed: ${e.javaClass.simpleName}")
+        }
+        scope.launch {
+            delay(Config.NOTHING_TO_RESUME_STOP_DELAY_MS)
+            if (player?.currentMediaItem == null) {
+                ServiceCompat.stopForeground(this@PlaybackService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                cancelNotification()
+            }
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent != null) startedWithStartCommand = true
+        return super.onStartCommand(intent, flags, startId)
     }
 
     private fun Intent.keyEvent(): KeyEvent? =

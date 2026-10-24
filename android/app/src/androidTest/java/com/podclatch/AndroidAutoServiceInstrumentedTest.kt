@@ -85,7 +85,14 @@ class AndroidAutoServiceInstrumentedTest {
     @After
     fun cleanUp() {
         h.release()
-        runBlocking { h.store.transaction { ownFeeds.forEach { deleteFeed(it) } } }
+        // Playing leaves outbox rows (saved positions, Played). Remove them with the Episodes in one transaction:
+        // a later write by the recorder then finds no Episode, so nothing is left to be pushed to another test's server.
+        runBlocking {
+            h.store.transaction {
+                ownEpisodeIds.forEach { deletePending(it) }
+                ownFeeds.forEach { deleteFeed(it) }
+            }
+        }
     }
 
     private fun List<MediaItem>.ownIds() = map { it.mediaId }.filter { (it.toLongOrNull() ?: -1) in ownEpisodeIds }
@@ -277,7 +284,8 @@ class AndroidAutoServiceInstrumentedTest {
             assertTrue(browser.isCommandAvailable(Player.COMMAND_SEEK_BACK))
             assertTrue(browser.isCommandAvailable(Player.COMMAND_SEEK_FORWARD))
             assertFalse(browser.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT))
-            assertFalse(browser.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS))
+            assertFalse(browser.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
+            assertFalse(browser.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM))
             val buttons = browser.mediaButtonPreferences
             assertEquals(listOf(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD), buttons.map { it.playerCommand })
             assertTrue("no custom command button", buttons.all { it.sessionCommand == null })

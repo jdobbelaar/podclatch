@@ -83,6 +83,23 @@ This starts the server and its Postgres together. Run these from the repository 
 - **Runtime:** about 1 minute once the image is built, a few minutes on a first run that has to build it and pull base images.
 - **Failures:** if a test fails or the stack does not start, the logs of all services are printed before the stack is removed. The stack is always removed (`down -v --remove-orphans`), also after a failure.
 
+## Android Auto
+
+PodClatch shows up in Android Auto as a media app. In the car you can browse the Queue and the Feeds (two tabs, served from the phone's local cache, so it works offline), start an Episode, and use Android Auto's standard playback screen with skip back and skip forward. There is no search and no custom car screen. Playing from the car follows the phone's rules: the download starts, the Queue advances, and the saved position and Played work as on the phone. After the app was stopped, connecting to the car or pressing Play resumes the Episode you last left unfinished, or else the first Queue item.
+
+Android Auto only lists apps from the Play Store unless you allow others, so a debug or sideloaded build needs this once, on the phone:
+
+1. Install the debug build of PodClatch.
+2. Open the Android Auto settings and tap "Version" about ten times to turn on developer mode.
+3. Open the three-dot menu, choose "Developer settings", and turn on "Unknown sources".
+
+To try it without a car, use the Desktop Head Unit:
+
+1. In the Android SDK Manager (SDK Tools), install "Android Auto Desktop Head Unit Emulator".
+2. In the phone's Android Auto developer settings, choose "Start head unit server".
+3. Connect the phone to the PC with USB and run `adb forward tcp:5277 tcp:5277`.
+4. Run `desktop-head-unit` from `<Android SDK>/extras/google/auto/`. PodClatch appears in the media apps list.
+
 ## Known limitations
 
 These are deliberate trade-offs for a single-user app, recorded so they are not mistaken for oversights.
