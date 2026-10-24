@@ -3,6 +3,8 @@ package com.podclatch.playback
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.view.KeyEvent
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -362,6 +364,23 @@ class PlaybackService : MediaLibraryService() {
      * overridden: Media3's "not supported" answers stand until the browse tree exists.
      */
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+        /**
+         * Next and Previous keys skip forward and back (the player advertises neither, so Media3 would
+         * ignore them). Every other key keeps Media3's default handling.
+         */
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent,
+        ): Boolean {
+            val event = intent.keyEvent() ?: return false
+            if (!isSkipKey(event.keyCode)) return false
+            val direction = skipForKeyEvent(event.keyCode, event.action, event.repeatCount)
+            val skipper = session.player as? SkipForwardingPlayer
+            if (direction != null && skipper != null) skipper.skipFromKey(direction)
+            return true
+        }
+
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -393,6 +412,10 @@ class PlaybackService : MediaLibraryService() {
             MediaSession.MediaItemsWithStartPosition(resolved, index, position)
         }
     }
+
+    private fun Intent.keyEvent(): KeyEvent? =
+        if (Build.VERSION.SDK_INT >= 33) getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        else @Suppress("DEPRECATION") getParcelableExtra(Intent.EXTRA_KEY_EVENT)
 
     /** The loaded Episode is about to be replaced by [newMediaId]: record it at the position it was left at. */
     private fun noteSwitchFrom(newMediaId: String?) {

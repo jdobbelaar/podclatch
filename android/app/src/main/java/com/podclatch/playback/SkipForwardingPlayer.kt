@@ -21,14 +21,21 @@ class SkipForwardingPlayer(
 
     override fun getSeekForwardIncrement(): Long = skipForwardMs()
 
-    override fun seekBack() {
-        seekTo((currentPosition - skipBackMs()).coerceAtLeast(0))
+    override fun seekBack() = skip(SkipDirection.BACK)
+
+    override fun seekForward() = skip(SkipDirection.FORWARD)
+
+    /**
+     * A Next or Previous key event (headset, Bluetooth): the same skip as Fast-forward and Rewind. Does
+     * nothing when no Episode is loaded or it has ended, and never starts or stops playback.
+     */
+    fun skipFromKey(direction: SkipDirection) {
+        if (currentMediaItem == null || playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) return
+        skip(direction)
     }
 
-    override fun seekForward() {
-        val target = currentPosition + skipForwardMs()
-        val duration = duration
-        seekTo(if (duration > 0) minOf(target, duration) else target)
+    private fun skip(direction: SkipDirection) {
+        seekTo(skipTargetMs(direction, currentPosition, duration, skipBackMs(), skipForwardMs()))
     }
 
     override fun getAvailableCommands(): Player.Commands =
