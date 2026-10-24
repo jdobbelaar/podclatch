@@ -88,6 +88,9 @@ object Config {
     const val SPEED_MAX = 3.0f
     const val SPEED_STEP = 0.1f
 
+    /** The content authority that serves the generated Speed button icon (US-16). */
+    const val SPEED_ICON_AUTHORITY = "com.podclatch.speedicon"
+
     /** The full player and the mini player read the playback position this often. */
     const val PLAYER_POSITION_POLL_MS = 500L
 

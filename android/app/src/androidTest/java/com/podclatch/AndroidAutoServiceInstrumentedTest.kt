@@ -287,8 +287,9 @@ class AndroidAutoServiceInstrumentedTest {
             assertFalse(browser.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM))
             assertFalse(browser.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM))
             val buttons = browser.mediaButtonPreferences
-            assertEquals(listOf(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD), buttons.map { it.playerCommand })
-            assertTrue("no custom command button", buttons.all { it.sessionCommand == null })
+            // The Speed button (US-16 part 2, SpeedButtonInstrumentedTest) follows the two skip buttons.
+            assertEquals(listOf(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_FORWARD), buttons.take(2).map { it.playerCommand })
+            assertEquals(1, buttons.count { it.sessionCommand != null })
         }
     }
 

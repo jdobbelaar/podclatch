@@ -50,6 +50,13 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
+
+        <!-- Draws the Speed button icon (the speed text) on request; read-only, no user data, answers only for a speed label. -->
+        <provider
+            android:name=".playback.SpeedIconProvider"
+            android:authorities="com.podclatch.speedicon"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
     </application>
 
 </manifest>
