@@ -7,7 +7,7 @@ name: End-to-end test
 
 on:
   push:
-    branches: [main, us-32-e2e-test] # TEMPORARY branch: first CI run before the file exists on main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
