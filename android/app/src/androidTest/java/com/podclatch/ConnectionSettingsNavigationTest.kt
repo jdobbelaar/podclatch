@@ -47,8 +47,10 @@ class ConnectionSettingsNavigationTest {
             }
         }
         server.start()
-        // The first Episode loaded in a process would ask for this at a moment the test cannot predict.
-        device.executeShellCommand("pm grant com.podclatch android.permission.POST_NOTIFICATIONS")
+        // Both would otherwise be asked for at a moment the test cannot predict: notifications by the first
+        // Episode loaded in a process, and the local-network rationale dialog (#55) by Test connection when the
+        // mock server's host resolves to a local address on a fresh emulator. Granted, neither is shown.
+        grantRuntimePermissions(instrumentation.targetContext.packageName)
         val context = instrumentation.targetContext
         context.startActivity(
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
