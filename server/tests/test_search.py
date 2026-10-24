@@ -514,3 +514,74 @@ def test_fixture_is_valid_json_with_example_urls_only():
     text = json.dumps(data)
     assert "example.com" in text
     assert "itunes" not in text
+
+
+# ---- ITUNES_SEARCH_URL (issue #51) ----
+
+CANARY_URL = "http://canary-itunes.invalid/secret-path/search"
+
+
+def app_with_url(url):
+    return create_app(Settings(token=TOKEN, test_mode=True, itunes_search_url=url))
+
+
+def stub_client(monkeypatch, upstream):
+    """The lazily created SearchService builds its client with make_client; hand it a stub."""
+    monkeypatch.setattr(
+        search_module,
+        "make_client",
+        lambda: httpx.Client(transport=httpx.MockTransport(upstream), follow_redirects=True),
+    )
+
+
+def test_default_url_is_the_real_itunes_when_unset(monkeypatch):
+    upstream = Upstream()
+    stub_client(monkeypatch, upstream)
+    client = TestClient(create_app(Settings(token=TOKEN, test_mode=True)))
+    assert get(client, "history").status_code == 200
+    assert str(upstream.requests[0].url).startswith("https://itunes.apple.com/search?")
+
+
+def test_configured_url_is_the_one_called(monkeypatch):
+    upstream = Upstream()
+    stub_client(monkeypatch, upstream)
+    client = TestClient(app_with_url("http://feedhost:8080/search"))
+    assert get(client, "history").status_code == 200
+    request = upstream.requests[0]
+    assert (request.url.scheme, request.url.host, request.url.port) == ("http", "feedhost", 8080)
+    assert request.url.path == "/search"
+    assert dict(request.url.params) == {"media": "podcast", "term": "history", "limit": "25"}
+
+
+def test_search_service_url_argument_is_used():
+    upstream = Upstream()
+    client = httpx.Client(transport=httpx.MockTransport(upstream))
+    SearchService(client=client, url="https://example.invalid/dir").search("history")
+    assert upstream.requests[0].url.host == "example.invalid"
+    assert upstream.requests[0].url.path == "/dir"
+
+
+def test_canary_url_and_term_are_never_logged_at_debug(monkeypatch, caplog):
+    def failing(request):
+        return httpx.Response(500, content=b"canary-body")
+
+    for handler in (None, failing):
+        upstream = Upstream(handler)
+        stub_client(monkeypatch, upstream)
+        client = TestClient(app_with_url(CANARY_URL))
+        caplog.clear()
+        caplog.set_level(logging.DEBUG)
+        get(client, SECRET_TERM)
+        assert upstream.calls == 1
+        assert upstream.requests[0].url.host == "canary-itunes.invalid"
+        for record in caplog.records:
+            text = record.getMessage()
+            for canary in (SECRET_TERM, "canary-itunes", "secret-path", "canary-body"):
+                assert canary not in text
+
+
+def test_compose_file_for_normal_use_does_not_set_the_variable():
+    compose = Path(__file__).parents[2] / "docker-compose.yaml"
+    if not compose.is_file():
+        pytest.skip("the repository root is not available (tests run in the container)")
+    assert "ITUNES_SEARCH_URL" not in compose.read_text(encoding="utf-8")
