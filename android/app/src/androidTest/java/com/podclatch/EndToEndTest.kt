@@ -7,7 +7,7 @@ import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.podclatch.data.db.DownloadState
@@ -116,8 +116,8 @@ class EndToEndTest {
         step = "1 connect: enter the server address and token, Test connection, Save"
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.awaitTag("server_url", 60_000)
-        compose.onNodeWithTag("server_url").performTextInput(serverUrl)
-        compose.onNodeWithTag("auth_token").performTextInput(token)
+        compose.onNodeWithTag("server_url").performTextReplacement(serverUrl)
+        compose.onNodeWithTag("auth_token").performTextReplacement(token)
         compose.onNodeWithTag("test_connection").performClick()
         compose.await("Save is enabled after the connection test passed", 60_000) {
             compose.onAllNodes(hasTestTag("save_continue") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
@@ -135,7 +135,7 @@ class EndToEndTest {
         compose.awaitTag("subscribe_fab")
         compose.onNodeWithTag("subscribe_fab").performClick()
         compose.awaitTag("subscribe_url_field")
-        compose.onNodeWithTag("subscribe_url_field").performTextInput(feedUrl)
+        compose.onNodeWithTag("subscribe_url_field").performTextReplacement(feedUrl)
         compose.onNodeWithTag("subscribe_url_button").performClick()
         val feedId = awaitServer("the server lists the new Feed", 60_000) {
             serverFeedIds().singleOrNull()
@@ -252,8 +252,10 @@ object E2eReport {
     private val address = Regex("""[A-Za-z][A-Za-z0-9+.-]*://\S+""")
 
     fun build(step: String, cause: Throwable, lastStatus: String, screen: String, secrets: List<String>): String {
-        val text = "End-to-end test failed at step $step. Cause: ${cause.message ?: cause.javaClass.simpleName}. " +
-            "Last server HTTP status: $lastStatus. The screen showed: $screen"
+        val reason = cause.message ?: cause.javaClass.simpleName
+        // The wait helpers already put the screen text in their message; do not print it twice.
+        val screenPart = if ("the screen showed:" in reason) "" else " The screen showed: $screen"
+        val text = "End-to-end test failed at step $step. Cause: $reason. Last server HTTP status: $lastStatus.$screenPart"
         return redact(text, secrets)
     }
 
