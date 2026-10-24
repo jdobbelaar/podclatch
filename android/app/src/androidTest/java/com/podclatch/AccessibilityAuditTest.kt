@@ -18,7 +18,10 @@ class AccessibilityAuditTest {
     private val app = AppHarness()
     private val density = app.context.resources.displayMetrics.density
     private val problems = mutableListOf<String>()
-    private val walker = ScreenWalker(compose, app) { screen -> problems += compose.auditProblems(screen, density) }
+    private val walker = ScreenWalker(compose, app) { screen -> problems += compose.auditProblems(screen, density)
+        // A scrolled list shows rows cut by the viewport edge, which is not a size defect; the dump check skips those visits.
+        if ("scrolled" !in screen) problems += uiAutomatorProblems(screen, density)
+    }
 
     @After
     fun tearDown() {
