@@ -173,6 +173,13 @@ interface EpisodeDao {
     )
     suspend fun topUpRows(): List<TopUpRow>
 
+    /** Every Played Episode that still has a download of any kind (the auto-delete sweep decides which to remove). */
+    @Query(
+        "SELECT id AS episodeId, playedAt, downloadState, localPath FROM episode " +
+            "WHERE status = 'PLAYED' AND (downloadState != 'NONE' OR localPath IS NOT NULL)",
+    )
+    suspend fun sweepRows(): List<SweepRow>
+
     @Query("SELECT localPath FROM episode WHERE id IN (:ids) AND localPath IS NOT NULL")
     suspend fun localPathsByIds(ids: List<Long>): List<String>
 

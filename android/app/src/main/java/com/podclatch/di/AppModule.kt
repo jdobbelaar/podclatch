@@ -22,7 +22,9 @@ import com.podclatch.data.repo.SettingsRepository
 import com.podclatch.domain.Clock
 import com.podclatch.domain.DiskFileDeleter
 import com.podclatch.domain.FileDeleter
+import com.podclatch.domain.AutoDeleteSweep
 import com.podclatch.domain.AutoDownloadTopUp
+import com.podclatch.domain.LoadedEpisodeSource
 import com.podclatch.domain.LocalUpkeep
 import com.podclatch.domain.NewEpisodeNotificationStep
 import com.podclatch.domain.NewEpisodeNotifier
@@ -110,8 +112,8 @@ object AppModule {
     fun workManager(@ApplicationContext context: Context): WorkManager = WorkManager.getInstance(context)
 
     /**
-     * The local upkeep after every successful pull, as an ordered list of steps. US-15 adds the auto-delete
-     * sweep in front of the top-up. A failing step is logged by name and exception class only.
+     * The local upkeep after every successful pull, as an ordered list of steps: the auto-delete sweep (US-15),
+     * then the top-up. A failing step is logged by name and exception class only.
      */
     @Provides @Singleton
     fun localUpkeep(
@@ -119,8 +121,13 @@ object AppModule {
         settings: SettingsRepository,
         downloads: Downloads,
         notifier: NewEpisodeNotifier,
+        clock: Clock,
+        playback: com.podclatch.playback.PlaybackController,
     ): LocalUpkeep = OrderedLocalUpkeep(
         steps = listOf(
+            "auto-delete sweep" to AutoDeleteSweep(
+                store, settings, downloads, LoadedEpisodeSource { playback.state.value.episodeId }, clock,
+            ),
             "top-up" to AutoDownloadTopUp(store, settings, downloads),
             "new-episode notification" to NewEpisodeNotificationStep(store, settings, notifier),
         ),

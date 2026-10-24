@@ -65,7 +65,22 @@ class TopUpQueryInstrumentedTest {
     }
 
     @Test
-    fun feedTitlesAnswersOnlyForCachedFeeds() = runBlocking<Unit> {
+    fun sweepRowsArePlayedEpisodesThatStillHaveADownload() = runBlocking<Unit> {
+        store.transaction {
+            insertFeedIfAbsent(feedRow(1, 0, ListenOrder.NEWEST_FIRST))
+            insertEpisodeIfAbsent(episodeRow(10, 1, EpisodeStatus.PLAYED, DownloadState.DOWNLOADED))
+            insertEpisodeIfAbsent(episodeRow(11, 1, EpisodeStatus.PLAYED, DownloadState.DOWNLOADING))
+            insertEpisodeIfAbsent(episodeRow(12, 1, EpisodeStatus.PLAYED, DownloadState.FAILED))
+            insertEpisodeIfAbsent(episodeRow(13, 1, EpisodeStatus.PLAYED, DownloadState.NONE))
+            insertEpisodeIfAbsent(episodeRow(14, 1, EpisodeStatus.NEW, DownloadState.DOWNLOADED))
+        }
+        val rows = store.sweepRows().sortedBy { it.episodeId }
+        assertEquals(listOf(10L, 11L, 12L), rows.map { it.episodeId })
+        assertEquals(listOf(DownloadState.DOWNLOADED, DownloadState.DOWNLOADING, DownloadState.FAILED), rows.map { it.downloadState })
+    }
+
+    @Test
+    fun feedTitlesAnswersOnlyForCachedFeeds()= runBlocking<Unit> {
         store.transaction {
             insertFeedIfAbsent(feedRow(1, 0, ListenOrder.NEWEST_FIRST))
             insertFeedIfAbsent(feedRow(2, 1, ListenOrder.NEWEST_FIRST))
