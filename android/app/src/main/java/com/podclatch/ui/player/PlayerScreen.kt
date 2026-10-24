@@ -18,7 +18,11 @@ import android.content.res.Configuration
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -66,6 +70,7 @@ fun PlayerScreen(onClose: () -> Unit, viewModel: PlayerViewModel = hiltViewModel
         onSkipForward = viewModel::skipForward,
         onToggleSpeed = viewModel::toggleSpeed,
         onConfirmSpeed = viewModel::confirmSpeed,
+        onRetry = viewModel::retry,
     )
 }
 
@@ -80,6 +85,7 @@ fun PlayerContent(
     onSkipForward: () -> Unit,
     onToggleSpeed: () -> Unit,
     onConfirmSpeed: (Float, Float) -> Unit,
+    onRetry: () -> Unit = {},
 ) {
     val playback = state.playback
     val duration = playback.durationMs
@@ -128,6 +134,28 @@ fun PlayerContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        playerErrorUi(playback.error)?.let { error ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    stringResource(
+                        when (error.message) {
+                            PlayerErrorMessage.NETWORK -> R.string.player_error_network
+                            PlayerErrorMessage.UNSUPPORTED -> R.string.player_error_unsupported
+                            PlayerErrorMessage.UNKNOWN -> R.string.player_error_unknown
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("player_error"),
+                )
+                if (error.canRetry) {
+                    Button(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp).testTag("player_retry")) {
+                        Text(stringResource(R.string.player_retry))
+                    }
+                }
+            }
         }
         Column(Modifier.fillMaxWidth()) {
             val seekDescription = stringResource(R.string.player_seekbar_description)

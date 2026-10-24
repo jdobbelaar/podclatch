@@ -131,6 +131,25 @@ class FeedsController @Inject constructor(
         }
     }
 
+    /**
+     * "Move up" ([delta] -1) and "Move down" (+1): the screen-reader alternative to the drag. It sends the
+     * same single reorder; it does nothing at the end of the list or while a gesture or server action runs.
+     */
+    fun moveByOne(feedId: Long, delta: Int) {
+        val items = latest.value.orEmpty()
+        val order = reorderByOne(items.map { it.id }, feedId, delta) ?: return
+        var started = false
+        local.update { l ->
+            if (l.busy || l.dragging) {
+                l
+            } else {
+                started = true
+                l.copy(working = order, frozen = items.associateBy { it.id }, busy = true, message = null)
+            }
+        }
+        if (started) scope.launch { sendOrder(order) }
+    }
+
     private suspend fun sendOrder(ids: List<Long>) {
         val message: FeedsMessage? = try {
             when (val result = repo.reorder(ids)) {

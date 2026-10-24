@@ -17,6 +17,7 @@ class FeedsViewModel @Inject constructor(private val controller: FeedsController
     fun onMove(fromId: Long, toId: Long) = controller.onMove(fromId, toId)
     fun onDragStopped() = controller.onDragStopped()
     fun refresh() = controller.refresh()
+    fun moveByOne(feedId: Long, delta: Int) = controller.moveByOne(feedId, delta)
     fun requestUnsubscribe(feedId: Long) = controller.requestUnsubscribe(feedId)
     fun cancelUnsubscribe() = controller.cancelUnsubscribe()
     fun confirmUnsubscribe() = controller.confirmUnsubscribe()

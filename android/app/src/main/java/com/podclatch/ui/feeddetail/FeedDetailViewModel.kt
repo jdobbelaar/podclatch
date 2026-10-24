@@ -9,6 +9,7 @@ import com.podclatch.data.repo.EpisodeStateRepository
 import com.podclatch.data.repo.FeedsRepository
 import com.podclatch.di.ApplicationScope
 import com.podclatch.domain.SyncEngine
+import com.podclatch.download.Downloads
 import com.podclatch.playback.PlaybackController
 import com.podclatch.ui.nav.FeedDetail
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,6 +27,7 @@ class FeedDetailViewModel @Inject constructor(
     states: EpisodeStateRepository,
     engine: SyncEngine,
     playback: PlaybackController,
+    downloads: Downloads,
     @ApplicationScope appScope: CoroutineScope,
     savedState: SavedStateHandle,
 ) : ViewModel() {
@@ -37,6 +39,7 @@ class FeedDetailViewModel @Inject constructor(
         playback = playback,
         scope = appScope,
         stateScope = viewModelScope,
+        downloads = downloads,
     )
 
     val state: StateFlow<FeedDetailUiState> = controller.uiState
@@ -52,5 +55,6 @@ class FeedDetailViewModel @Inject constructor(
     fun markPlayed(episodeId: Long) = controller.markPlayed(episodeId)
     fun markNew(episodeId: Long) = controller.markNew(episodeId)
     fun play(episodeId: Long) = controller.play(episodeId)
+    fun retryDownload(episodeId: Long) = controller.retryDownload(episodeId)
     fun dismissMessage() = controller.dismissMessage()
 }

@@ -231,4 +231,18 @@
         <item quantity="one">%d episode</item>
         <item quantity="other">%d episodes</item>
     </plurals>
+    <string name="episode_download_failed">Download failed</string>
+    <string name="episode_download_unavailable">Download unavailable</string>
+    <string name="menu_retry_download">Retry download</string>
+    <string name="player_error_network">Could not load the audio. Check your connection.</string>
+    <string name="player_error_unsupported">This audio format is not supported.</string>
+    <string name="player_error_unknown">Playback failed.</string>
+    <string name="player_retry">Retry</string>
+    <string name="menu_refresh_all_feeds">Refresh all Feeds</string>
+    <string name="menu_refresh_this_feed">Refresh this Feed</string>
+    <string name="action_mark_played">Mark as Played</string>
+    <string name="action_mark_new">Mark as New</string>
+    <string name="action_unsubscribe">Unsubscribe</string>
+    <string name="action_move_up">Move up</string>
+    <string name="action_move_down">Move down</string>
 </resources>

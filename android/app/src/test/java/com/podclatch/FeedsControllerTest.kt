@@ -92,6 +92,29 @@ class FeedsControllerTest {
     }
 
     @Test
+    fun moveDownAndMoveUpSendTheSameSingleReorderAsADrag() {
+        loaded()
+        controller.moveByOne(1, 1)
+        val down = controller.await("moved down to 2,1,3 and idle") { !it.busy && it.items?.map { f -> f.id } == listOf(2L, 1L, 3L) }
+        assertEquals(listOf(2L, 1L, 3L), ids(down))
+        assertEquals(listOf(listOf(2L, 1L, 3L)), api.reorderRequests)
+
+        controller.moveByOne(3, -1)
+        controller.await("moved up to 2,3,1 and idle") { !it.busy && it.items?.map { f -> f.id } == listOf(2L, 3L, 1L) }
+        assertEquals(listOf(listOf(2L, 1L, 3L), listOf(2L, 3L, 1L)), api.reorderRequests)
+    }
+
+    @Test
+    fun moveUpOnTheFirstAndMoveDownOnTheLastSendNothing() {
+        loaded()
+        controller.moveByOne(1, -1)
+        controller.moveByOne(3, 1)
+        controller.moveByOne(99, 1)
+        assertTrue(api.reorderRequests.isEmpty())
+        assertEquals(listOf(1L, 2L, 3L), ids(controller.uiState.value))
+    }
+
+    @Test
     fun aDropSendsOneFullListAndKeepsTheDroppedOrder() {
         loaded()
         val release = CompletableDeferred<Unit>()

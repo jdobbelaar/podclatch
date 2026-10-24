@@ -154,7 +154,7 @@ class FakeCacheStore : CacheStore {
     override fun observeEpisodes(feedId: Long): Flow<List<FeedEpisode>> = version.map {
         episodes.values.filter { it.feedId == feedId }
             .sortedWith(compareByDescending<Episode> { it.publishedAt }.thenByDescending { it.id })
-            .map { FeedEpisode(it.id, it.title, it.publishedAt, it.durationSec, it.status, it.positionSec) }
+            .map { FeedEpisode(it.id, it.title, it.publishedAt, it.durationSec, it.status, it.positionSec, it.downloadState, it.downloadPermanentFailure) }
     }.distinctUntilChanged()
 
     override fun observeEpisode(id: Long): Flow<com.podclatch.data.db.EpisodeProgress?> = version.map {
@@ -514,7 +514,7 @@ class FakePlaybackController(private val knownIds: Set<Long> = emptySet()) : Pla
 
     /** Replaces the whole state, for tests that need a duration, an artwork, or an error. */
     fun setState(state: PlaybackUiState) {
-        flow.value = state
+        flow.update { state }
     }
 
     override fun seekTo(positionMs: Long) {

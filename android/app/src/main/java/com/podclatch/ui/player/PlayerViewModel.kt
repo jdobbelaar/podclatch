@@ -29,6 +29,7 @@ class PlayerViewModel @Inject constructor(
     val state: StateFlow<PlayerUiState> = controller.uiState
 
     fun playPause() = controller.playPause()
+    fun retry() = controller.retry()
     fun pause() = controller.pause()
     fun resume() = controller.resume()
     fun seekTo(positionMs: Long) = controller.seekTo(positionMs)

@@ -81,6 +81,25 @@ class PlayerController(
         if (playback.state.value.isPlaying) playback.pause() else playback.resume()
     }
 
+    /**
+     * Retry after a playback error: asks for the loaded Episode again once, which resumes at the saved
+     * position. Does nothing when no Episode is loaded or the last error cannot be retried.
+     */
+    fun retry() {
+        val state = playback.state.value
+        val id = state.episodeId ?: return
+        if (playerErrorUi(state.error)?.canRetry != true) return
+        scope.launch {
+            try {
+                playback.play(id)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The state flow keeps showing the error; there is nothing more to say.
+            }
+        }
+    }
+
     fun pause() = playback.pause()
     fun resume() = playback.resume()
 
