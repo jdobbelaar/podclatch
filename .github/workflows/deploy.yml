@@ -1,0 +1,75 @@
+name: Deploy
+
+# Deploys to dev: after Server CI succeeds on a push to main, build the server image once, push it to ECR
+# as <sha> and dev, and verify the service. App Runner watches the dev tag and deploys the new image.
+#
+# Trigger choice: `workflow_run` on "Server CI" rather than a reusable call, so Server CI stays unchanged
+# and a red main never deploys (the job requires conclusion == success and a push event). The run uses the
+# default-branch copy of this file and checks out the exact commit that Server CI tested.
+#
+# Until the human configures AWS, the repository variable AWS_DEPLOY_ROLE_ARN is unset and the job is
+# SKIPPED, so main stays green. Setup (the human, once; see the issue "US-34"):
+#   1. Settings, Environments: create `dev`. Set "Deployment branches and tags" to "Selected branches",
+#      main only. Without that restriction, any branch whose workflow declares `environment: dev` can
+#      assume the AWS deploy role and push images.
+#   2. Settings, Secrets and variables, Actions, Variables: AWS_REGION, AWS_DEPLOY_ROLE_ARN (stack output
+#      DeployRoleArn), DEV_URL (stack output ServiceUrl of podclatch-dev).
+on:
+  workflow_run:
+    workflows: ["Server CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != ''
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ECR_REPOSITORY: podclatch-server
+      SERVICE_NAME: podclatch-dev
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Build the image once and push it as <sha> and dev
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -eu
+          image="$REGISTRY/$ECR_REPOSITORY"
+          docker build --platform linux/amd64 -t "$image:$SHA" server/
+          docker tag "$image:$SHA" "$image:dev"
+          docker push "$image:$SHA"
+          docker push "$image:dev"
+
+      - name: Wait for App Runner to deploy the new image
+        run: python3 .github/scripts/ci_tools.py wait-service --name "$SERVICE_NAME" --timeout 900
+
+      - name: Verify the health endpoint
+        env:
+          DEV_URL: ${{ vars.DEV_URL }}
+        run: python3 .github/scripts/ci_tools.py health --url "$DEV_URL" --timeout 600

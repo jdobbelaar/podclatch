@@ -11,16 +11,17 @@ Why App Runner: it gives a valid `https://<id>.<region>.awsapprunner.com` addres
 
 ## 1. What gets created, and what it costs
 
-Estimate made on 2026-10-24 for `us-east-1`, from list prices as the story's author understood them. Prices change; check the AWS pricing pages and your billing page.
+Estimate made on 2026-10-24 for `us-east-1`, from list prices as the story's author understood them. It is an estimate and has not been checked against live prices. Prices change; check the AWS pricing pages and your billing page.
 
 | Item | Per environment, per month |
 |---|---|
 | RDS PostgreSQL `db.t4g.micro`, single AZ | about 13 dollars |
 | RDS storage, 20 GB gp3 | about 2.50 dollars |
 | App Runner, one instance of 0.25 vCPU and 0.5 GB (provisioned memory plus active use) | about 4 to 8 dollars |
+| Public IPv4 address of the publicly accessible RDS instance | about 3.65 dollars |
 | Secrets Manager, 3 secrets | about 1.20 dollars |
 | ECR storage and the bootstrap role | pennies |
-| **Total** | **about 18 to 25 dollars** |
+| **Total** | **about 22 to 29 dollars** |
 
 Two environments cost about double. The cheapest path to a working demo is to deploy `dev` only, for the demo and grading, and then tear it down (section 10). `prod` is written and checked but need not be deployed.
 
