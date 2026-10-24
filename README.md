@@ -76,6 +76,8 @@ This starts the server and its Postgres together. Run these from the repository 
 
 **Search directory.** `GET /v1/search` calls the iTunes directory at `https://itunes.apple.com/search`. The optional variable `ITUNES_SEARCH_URL` (must start with `http://` or `https://`) points it somewhere else; the integration tests use it to reach a fake host. Normal use does not set it, and `docker-compose.yaml` does not pass it through, so `make up` calls the real iTunes.
 
+**Access log.** The server drops the query string from every request line in its access log (for example `GET /v1/search?q=...` is logged as `GET /v1/search`), because feed URLs and search terms can carry secrets.
+
 **Tests.** `make test` runs the server tests (SQLite) in a container, so it needs only Docker and no `.env`. The host-side `uv run pytest` above still works and is unchanged.
 
 **Integration tests.** `make test-integration` runs the suite in `server/tests_integration/` over HTTP against the real production image and Postgres, with a small fake feed host standing in for publishers, so it needs no internet. The pytest session itself starts and removes the stack, running `docker compose -p podclatch-it -f docker-compose.yaml -f docker-compose.integration.yaml ...` through one helper, which is why the "Raw command" cell is the `uv` command and not a `docker compose` one. The project name `podclatch-it` gives it its own containers, network, and Postgres volume, so your dev stack and its data are never touched. It covers subscribe, Episode state, Sync, unsubscribe, conflicting writes, Refresh, persistence across a restart and a full down and up, authentication, and feed URL secrecy. `uv run pytest` and `make test` do not run it.

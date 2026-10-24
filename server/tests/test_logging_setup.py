@@ -192,3 +192,44 @@ def test_access_filter_passes_unexpected_shapes_through(args):
     record.args = args
     assert RedactQueryFilter().filter(record) is True
     assert record.args == args
+
+
+EDGE_PATHS = [
+    ("GET", "/healthz?canary=CANARY", "/healthz"),
+    ("GET", "/v1/sync?since=0&limit=1&canary=CANARY", "/v1/sync"),
+    ("GET", "/v1/search?q=CANARY", "/v1/search"),
+    ("GET", "/v1/feeds?canary=CANARY", "/v1/feeds"),
+    ("GET", "/no/such/path?canary=CANARY", "/no/such/path"),
+    ("GET", "/x%3Fcanary=KEPT", "/x%3Fcanary=KEPT"),  # an encoded ? is path, not a query
+    ("GET", "/v1/feeds?", "/v1/feeds"),
+    ("POST", "/v1/feeds?a=CANARY&a=CANARY2&a=3", "/v1/feeds"),
+    ("GET", "/v1/search?q=%43ANARY%26x%3D1", "/v1/search"),
+    ("GET", "/v1/search?q=" + "CANARY" * 2000, "/v1/search"),  # several KB
+]
+
+
+@pytest.mark.parametrize(("method", "target", "expected"), EDGE_PATHS)
+def test_access_log_edge_cases(method, target, expected):
+    build()
+    out = access_lines(logging.INFO, ("1.2.3.4:5", method, target, "1.1", 404))
+    assert out.strip() == f'1.2.3.4:5 - "{method} {expected} HTTP/1.1" 404'
+    assert "CANARY" not in out
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [
+        ("/healthz?canary=CANARY", "/healthz"),
+        ("/v1/sync?since=0&canary=CANARY", "/v1/sync"),
+        ("/v1/search?q=CANARY", "/v1/search"),
+        ("/v1/feeds?canary=CANARY", "/v1/feeds"),
+        ("/no/such/path?canary=CANARY", "/no/such/path"),
+    ],
+)
+def test_requests_through_the_real_app_are_logged_without_the_query(target, expected):
+    app = build()
+    with TestClient(app, headers=AUTH) as client:
+        status = client.get(target).status_code
+    out = access_lines(logging.INFO, ("testclient:1", "GET", target, "1.1", status))
+    assert out.strip() == f'testclient:1 - "GET {expected} HTTP/1.1" {status}'
+    assert "CANARY" not in out
