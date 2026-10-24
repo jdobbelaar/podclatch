@@ -45,7 +45,7 @@ class AppHarness {
     private var scenario: ActivityScenario<MainActivity>? = null
 
     fun start(configured: Boolean = true) {
-        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantRuntimePermissions(context.packageName)
         audioRequests.clear()
         audio = MockWebServer().also { server ->
             server.dispatcher = object : Dispatcher() {
@@ -100,6 +100,19 @@ class AppHarness {
         b.putInt(16).putShort(1).putShort(1).putInt(8000).putInt(16000).putShort(2).putShort(16)
         b.put("data".toByteArray()).putInt(data)
         return b.array()
+    }
+}
+
+/**
+ * Grants the runtime permissions the app may ask for (`POST_NOTIFICATIONS`, and `ACCESS_LOCAL_NETWORK` where it
+ * exists, API 37), so a test does not depend on what an earlier run left on the emulator. A fresh emulator has
+ * neither granted, and the local-network rationale dialog (#55) would then block the connection form.
+ */
+fun grantRuntimePermissions(packageName: String) {
+    val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+    automation.grantRuntimePermission(packageName, Manifest.permission.POST_NOTIFICATIONS)
+    if (android.os.Build.VERSION.SDK_INT >= 37) {
+        automation.grantRuntimePermission(packageName, "android.permission.ACCESS_LOCAL_NETWORK")
     }
 }
 
