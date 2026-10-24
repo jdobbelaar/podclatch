@@ -1,0 +1,96 @@
+name: End-to-end test
+
+# The real Android app on an emulator against the real server from a Compose stack (US-32). It runs the same
+# command as a developer, `make test-e2e` (android/tools/e2e.py), which starts and removes its own Compose
+# project and generates a throwaway token and password at run time (masked in this log). No secret is used.
+# It runs on pushes to main and by hand, not on every pull request, because it takes 15 to 25 minutes.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_LEVEL: "34"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM (hardware acceleration for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Cache the AVD snapshot
+        id: avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api-${{ env.API_LEVEL }}-google_apis-x86_64-v1
+
+      - name: Create the AVD and its snapshot (cold cache only)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated the AVD snapshot for caching."
+
+      - name: Run the end-to-end test
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_SERIAL: emulator-5554
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: make test-e2e E2E_ARGS=--logs-dir=e2e-logs
+
+      - name: Upload the reports and logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-reports
+          path: |
+            e2e-logs
+            android/app/build/reports/androidTests
+            android/app/build/outputs/androidTest-results
+          if-no-files-found: ignore
+
+      - name: Remove the stack (safety net)
+        if: always()
+        # The script removes its own project; this repeats it in case the job was cancelled midway. The values
+        # are placeholders only because Compose needs the two variables to resolve the file.
+        env:
+          PODCLATCH_TOKEN: placeholder
+          POSTGRES_PASSWORD: placeholder
+        run: docker compose -p podclatch-e2e -f docker-compose.yaml -f docker-compose.integration.yaml -f docker-compose.e2e.yaml down -v --remove-orphans
