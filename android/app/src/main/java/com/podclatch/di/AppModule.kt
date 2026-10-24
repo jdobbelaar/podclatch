@@ -62,7 +62,6 @@ annotation class ApplicationScope
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class BindingsModule {
-    @Binds abstract fun api(impl: OkHttpPodClatchApi): PodClatchApi
     @Binds abstract fun settings(impl: DataStoreSettingsRepository): SettingsRepository
     @Binds abstract fun cacheStore(impl: RoomCacheStore): CacheStore
     @Binds abstract fun fileDeleter(impl: DiskFileDeleter): FileDeleter
