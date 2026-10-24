@@ -294,14 +294,15 @@ class ConnectionSettingsNavigationTest {
     fun aChoiceIsSavedAtOnceAndShownInTheRow() {
         openSettings()
         val original = 15 // the default; the test starts from a fresh install or one it has restored
+        // The description is a separate node from the tagged row in the accessibility tree, so match it alone.
         try {
             click(res("setting_skip_back"))
             click(res("setting_skip_back_option_10"))
-            awaitPresent("the row shows 10 seconds", By.res("setting_skip_back").desc("Skip back, 10 seconds"))
+            awaitPresent("the row shows 10 seconds", By.desc("Skip back, 10 seconds"))
         } finally {
             click(res("setting_skip_back"))
             click(res("setting_skip_back_option_$original"))
-            awaitPresent("the row shows $original seconds", By.res("setting_skip_back").desc("Skip back, $original seconds"))
+            awaitPresent("the row shows $original seconds", By.desc("Skip back, $original seconds"))
         }
     }
 
