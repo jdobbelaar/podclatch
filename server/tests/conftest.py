@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from collections.abc import Callable, Iterator
@@ -99,6 +100,16 @@ def databases(tmp_path, monkeypatch) -> Iterator[DatabaseFactory]:
     monkeypatch.delenv("DATABASE_URL", raising=False)
     yield factory
     factory.cleanup()
+
+
+@pytest.fixture(autouse=True)
+def reset_app_logger() -> Iterator[None]:
+    """`create_app` configures the `podclatch_server` logger; undo that after every test."""
+    logger = logging.getLogger("podclatch_server")
+    level, handlers = logger.level, list(logger.handlers)
+    yield
+    logger.setLevel(level)
+    logger.handlers[:] = handlers
 
 
 class CheckedStore:
