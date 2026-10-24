@@ -1,0 +1,79 @@
+name: Promote
+
+# Promotes the image that is running on dev to prod by moving the `prod` tag to the same digest (no
+# rebuild), then verifies prod. Manual only: running this workflow is the gate. Only an image that
+# currently carries the dev tag can be promoted; anything else is refused.
+#
+# The job is SKIPPED until AWS_DEPLOY_ROLE_ARN and PROD_URL are set, so nothing fails before the human
+# configures AWS or if prod is not deployed. Setup (the human, once; see the issue "US-34"):
+#   1. Settings, Environments: create `production`. Set "Deployment branches and tags" to "Selected
+#      branches", main only. Without that restriction, any branch whose workflow declares
+#      `environment: production` can assume the AWS deploy role. Required reviewers on this environment
+#      only work on a public repository (or a paid plan); until then, running this workflow by hand is
+#      the gate.
+#   2. Variables: AWS_REGION, AWS_DEPLOY_ROLE_ARN, PROD_URL (stack output ServiceUrl of podclatch-prod).
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character commit SHA of the image to promote. Empty means the image now tagged dev."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: vars.AWS_DEPLOY_ROLE_ARN != '' && vars.PROD_URL != ''
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ECR_REPOSITORY: podclatch-server
+      SERVICE_NAME: podclatch-prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Choose the image (it must be running on dev)
+        id: choose
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          set -eu
+          aws ecr describe-images --repository-name "$ECR_REPOSITORY" --output json \
+            | python3 .github/scripts/ci_tools.py select-promotion --sha "$INPUT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Retag that image as prod (same digest, no rebuild)
+        env:
+          DIGEST: ${{ steps.choose.outputs.digest }}
+          SHA: ${{ steps.choose.outputs.sha }}
+        run: |
+          set -eu
+          aws ecr batch-get-image --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageDigest=$DIGEST" --output json > "$RUNNER_TEMP/image.json"
+          manifest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["images"][0]["imageManifest"])' "$RUNNER_TEMP/image.json")
+          media_type=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["images"][0]["imageManifestMediaType"])' "$RUNNER_TEMP/image.json")
+          aws ecr put-image --repository-name "$ECR_REPOSITORY" --image-tag prod \
+            --image-manifest "$manifest" --image-manifest-media-type "$media_type" > /dev/null
+          echo "Promoted $SHA ($DIGEST) to prod."
+
+      - name: Wait for App Runner to deploy the new image
+        run: python3 .github/scripts/ci_tools.py wait-service --name "$SERVICE_NAME" --timeout 900
+
+      - name: Verify the health endpoint
+        env:
+          PROD_URL: ${{ vars.PROD_URL }}
+        run: python3 .github/scripts/ci_tools.py health --url "$PROD_URL" --timeout 600

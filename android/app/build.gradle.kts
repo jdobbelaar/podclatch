@@ -19,9 +19,34 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release signing comes only from environment variables (set by the Release APK workflow). Without
+    // all four, no signing configuration is attached and every other build is unchanged: the release APK
+    // is simply unsigned. The keystore and its passwords are never in the repository.
+    val releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH").orEmpty()
+    val releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD").orEmpty()
+    val releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS").orEmpty()
+    val releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD").orEmpty()
+    val hasReleaseSigning = listOf(
+        releaseKeystorePath, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword,
+    ).all { it.isNotBlank() }
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

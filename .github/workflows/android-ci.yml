@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,3 +28,12 @@ jobs:
 
       - name: Build and test
         run: ./gradlew build test
+
+      # `./gradlew build` already assembled the debug APK; keep it so a build can be installed by hand.
+      - name: Upload the debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: podclatch-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+          if-no-files-found: error
