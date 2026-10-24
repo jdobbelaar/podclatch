@@ -42,6 +42,18 @@ interface CacheStore {
     /** One Episode in the shape of a Queue row (in the Queue or not); null for an unknown id. */
     suspend fun queueRowOf(id: Long): QueueRow?
 
+    /** The Queue in the shape of the Android Auto browse tree (no order is promised; sort with `QueueOrder`). */
+    suspend fun browseQueue(): List<BrowseRow>
+
+    /** Every New Episode of one Feed in the same shape (no order is promised); empty for an unknown Feed. */
+    suspend fun browseFeedEpisodes(feedId: Long): List<BrowseRow>
+
+    /** New Episodes with saved progress (`positionSec` above 0), for resumption. */
+    suspend fun inProgressRows(): List<ResumeRow>
+
+    /** The id and Feed of every New Episode; emits again whenever any of them changes. */
+    fun observeNewEpisodeRefs(): Flow<List<NewEpisodeRef>>
+
     /** Every New Episode of every Feed with what the auto-download top-up needs; no order is promised. */
     suspend fun topUpRows(): List<TopUpRow>
 
@@ -122,6 +134,14 @@ class RoomCacheStore @Inject constructor(private val db: PodClatchDatabase) : Ca
     override suspend fun queue(): List<QueueRow> = episodes.queue()
 
     override suspend fun queueRowOf(id: Long): QueueRow? = episodes.queueRowOf(id)
+
+    override suspend fun browseQueue(): List<BrowseRow> = episodes.browseQueue()
+
+    override suspend fun browseFeedEpisodes(feedId: Long): List<BrowseRow> = episodes.browseFeedEpisodes(feedId)
+
+    override suspend fun inProgressRows(): List<ResumeRow> = episodes.inProgressRows()
+
+    override fun observeNewEpisodeRefs(): Flow<List<NewEpisodeRef>> = episodes.observeNewEpisodeRefs().distinctUntilChanged()
 
     override suspend fun topUpRows(): List<TopUpRow> = episodes.topUpRows()
 

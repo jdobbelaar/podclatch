@@ -89,8 +89,30 @@ private const val QUEUE_ORDER =
         "CASE WHEN f.listenOrder = 'NEWEST_FIRST' THEN -e.publishedAt ELSE e.publishedAt END ASC, " +
         "CASE WHEN f.listenOrder = 'NEWEST_FIRST' THEN -e.id ELSE e.id END ASC"
 
+/** The columns of a [BrowseRow]; the WHERE is added by each query (the order is applied in Kotlin by `QueueOrder`). */
+private const val BROWSE_SELECT =
+    "SELECT e.id AS episodeId, e.feedId AS feedId, f.priority AS feedPriority, f.listenOrder AS listenOrder, " +
+        "e.publishedAt AS publishedAt, e.title AS title, f.title AS feedTitle, e.artworkUrl AS artworkUrl, " +
+        "f.artworkUrl AS feedArtworkUrl, e.durationSec AS durationSec " +
+        "FROM episode e INNER JOIN feed f ON f.id = e.feedId "
+
 @Dao
 interface EpisodeDao {
+    /** The Queue in the shape of the browse tree (no order is promised; the caller sorts). */
+    @Query(BROWSE_SELECT + QUEUE_FILTER)
+    suspend fun browseQueue(): List<BrowseRow>
+
+    /** Every New Episode of one Feed (no order is promised; the caller sorts and caps). */
+    @Query(BROWSE_SELECT + "WHERE e.status = 'NEW' AND e.feedId = :feedId")
+    suspend fun browseFeedEpisodes(feedId: Long): List<BrowseRow>
+
+    /** New Episodes with saved progress, for resumption. */
+    @Query("SELECT id AS episodeId, status, positionSec, stateUpdatedAt FROM episode WHERE status = 'NEW' AND positionSec > 0")
+    suspend fun inProgressRows(): List<ResumeRow>
+
+    @Query("SELECT id AS episodeId, feedId FROM episode WHERE status = 'NEW'")
+    fun observeNewEpisodeRefs(): Flow<List<NewEpisodeRef>>
+
     @Query(QUEUE_SELECT + QUEUE_FILTER + QUEUE_ORDER)
     fun observeQueue(): Flow<List<QueueRow>>
 

@@ -129,4 +129,16 @@ object Config {
 
     /** A Played Episode's download is deleted once it has been Played at least this long (spec section 4). */
     val PLAYED_DELETE_DELAY: kotlin.time.Duration = kotlin.time.Duration.parse("1h")
+
+    /** The Android Auto browse tree lists at most this many New Episodes of one Feed (the Queue has no cap). */
+    const val BROWSE_FEED_EPISODE_CAP = 100
+
+    /**
+     * After a Play key found nothing to resume, the service waits this long and then ends itself (it was started
+     * in the foreground and has no notification to show; the system allows about 10 seconds).
+     */
+    const val NOTHING_TO_RESUME_STOP_DELAY_MS = 1_500L
+
+    /** Changes to the browse tree within this window are told to subscribed clients once per node. */
+    const val BROWSE_NOTIFY_DEBOUNCE_MS = 300L
 }

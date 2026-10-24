@@ -176,6 +176,28 @@ class FakeCacheStore : CacheStore {
 
     override suspend fun queueRowOf(id: Long): QueueRow? = episodes[id]?.let(::rowOf)
 
+    private fun browseRowOf(e: Episode): com.podclatch.data.db.BrowseRow? {
+        val f = feeds[e.feedId] ?: return null
+        return com.podclatch.data.db.BrowseRow(
+            e.id, f.id, f.priority, f.listenOrder, e.publishedAt, e.title, f.title, e.artworkUrl, f.artworkUrl, e.durationSec,
+        )
+    }
+
+    override suspend fun browseQueue(): List<com.podclatch.data.db.BrowseRow> = episodes.values
+        .filter { it.status == EpisodeStatus.NEW && (it.downloadState == DownloadState.DOWNLOADED || it.downloadState == DownloadState.DOWNLOADING) }
+        .mapNotNull(::browseRowOf)
+
+    override suspend fun browseFeedEpisodes(feedId: Long): List<com.podclatch.data.db.BrowseRow> =
+        episodes.values.filter { it.feedId == feedId && it.status == EpisodeStatus.NEW }.mapNotNull(::browseRowOf)
+
+    override suspend fun inProgressRows(): List<com.podclatch.data.db.ResumeRow> = episodes.values
+        .filter { it.status == EpisodeStatus.NEW && it.positionSec > 0 }
+        .map { com.podclatch.data.db.ResumeRow(it.id, it.status, it.positionSec, it.stateUpdatedAt) }
+
+    override fun observeNewEpisodeRefs(): Flow<List<com.podclatch.data.db.NewEpisodeRef>> = version.map {
+        episodes.values.filter { it.status == EpisodeStatus.NEW }.map { com.podclatch.data.db.NewEpisodeRef(it.id, it.feedId) }
+    }.distinctUntilChanged()
+
     override suspend fun topUpRows(): List<com.podclatch.data.db.TopUpRow> = episodes.values
         .filter { it.status == EpisodeStatus.NEW }
         .mapNotNull { e ->
