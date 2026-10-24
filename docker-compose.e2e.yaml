@@ -1,0 +1,10 @@
+# End-to-end test overlay (US-32). Used only by android/tools/e2e.py (`make test-e2e`), always as the
+# project `podclatch-e2e`, together with the base file and the integration overlay:
+#   docker compose -p podclatch-e2e --env-file <scratch env> -f docker-compose.yaml \
+#     -f docker-compose.integration.yaml -f docker-compose.e2e.yaml up -d --build --wait
+# It gives the server image its own tag so a build here never retags the image of the long-running dev
+# stack. The host port comes from PODCLATCH_PORT, which the script sets to 18180 (PODCLATCH_E2E_PORT
+# overrides it). Do not use this file by hand against any other project name.
+services:
+  server:
+    image: podclatch-server:e2e
