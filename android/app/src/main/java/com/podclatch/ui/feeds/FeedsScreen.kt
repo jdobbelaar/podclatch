@@ -80,7 +80,7 @@ import kotlin.math.roundToInt
 fun FeedsScreen(
     onOpenFeed: (Long) -> Unit,
     onSubscribe: () -> Unit,
-    onOpenConnection: () -> Unit,
+    onOpenSettings: () -> Unit,
     subscribeOutcome: SubscribeOutcome? = null,
     onSubscribeOutcomeHandled: () -> Unit = {},
     vm: FeedsViewModel = hiltViewModel(),
@@ -96,7 +96,7 @@ fun FeedsScreen(
         }
     }
     Scaffold(
-        topBar = { TabTopBar(stringResource(R.string.tab_feeds), onOpenConnection) },
+        topBar = { TabTopBar(stringResource(R.string.tab_feeds), onOpenSettings) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onSubscribe,

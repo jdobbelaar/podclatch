@@ -19,10 +19,10 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Drives the real app (no Compose test library) against a MockWebServer: opening "Connection settings"
- * from the Feeds tab and then pressing Cancel or system Back must return to the Feeds tab, not Queue.
- * It points the app at the mock server through the connection screen itself, so it works from a fresh
- * install and from an already configured one.
+ * Drives the real app (no Compose test library) against a MockWebServer: opening Settings from the Feeds
+ * tab and then pressing the Back button or system Back must return to the Feeds tab, not Queue, and the
+ * Settings screen saves a changed setting at once. It points the app at the mock server through the
+ * connection form in Settings itself, so it works from a fresh install and from an already configured one.
  */
 class ConnectionSettingsNavigationTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -98,11 +98,11 @@ class ConnectionSettingsNavigationTest {
         wait(res(id))!!.text = value
     }
 
-    private fun openConnectionSettings() {
+    private fun openSettings() {
         click(res("overflow_menu"))
         // The menu is a popup window, which does not expose test tags; find the item by its text.
-        click(By.text("Connection settings"))
-        assertNotNull("connection screen", wait(res("server_url")))
+        click(By.text("Settings"))
+        assertNotNull("Settings screen", wait(res("server_url")))
     }
 
     /** Connects the app to the mock server, from the connection screen if it is shown or from the menu. */
@@ -122,13 +122,18 @@ class ConnectionSettingsNavigationTest {
             if (onConnectionScreen == null) Thread.sleep(500)
         }
         assertNotNull("the app's first screen", onConnectionScreen)
-        if (onConnectionScreen == false) openConnectionSettings()
+        if (onConnectionScreen == false) openSettings()
         fill("server_url", server.url("/").toString().trimEnd('/'))
         fill("auth_token", "test-token")
         click(res("test_connection"))
         click(By.res("save_continue").enabled(true))
         // A different server asks for confirmation before the cache is wiped.
         device.wait(Until.findObject(By.text("Switch server")), 2_000)?.click()
+        if (onConnectionScreen == false) {
+            // Settings stays open after Save; wait for the saved message, then go back to the tabs.
+            awaitPresent("the saved message", By.res("connection_message").text("Saved."))
+            click(res("nav_back"))
+        }
         assertNotNull("tabs after saving", wait(res("tab_queue")))
     }
 
@@ -169,17 +174,17 @@ class ConnectionSettingsNavigationTest {
     }
 
     @Test
-    fun cancelFromTheFeedsTabReturnsToTheFeedsTab() {
+    fun theBackButtonFromSettingsOnTheFeedsTabReturnsToTheFeedsTab() {
         openFeedsTab()
-        openConnectionSettings()
-        click(res("connection_cancel"))
+        openSettings()
+        click(res("nav_back"))
         assertBackOnFeedsTab()
     }
 
     @Test
-    fun systemBackFromTheFeedsTabReturnsToTheFeedsTab() {
+    fun systemBackFromSettingsOnTheFeedsTabReturnsToTheFeedsTab() {
         openFeedsTab()
-        openConnectionSettings()
+        openSettings()
         device.pressBack()
         assertBackOnFeedsTab()
     }
@@ -266,11 +271,48 @@ class ConnectionSettingsNavigationTest {
     }
 
     @Test
-    fun theQueueTabAlsoReturnsToTheQueueTab() {
+    fun theBackButtonFromSettingsOnTheQueueTabReturnsToTheQueueTab() {
         click(res("tab_queue"))
-        openConnectionSettings()
-        click(res("connection_cancel"))
+        openSettings()
+        click(res("nav_back"))
         awaitPresent("the Queue content", res("queue_list"))
         awaitPresent("Queue tab selected", By.res("tab_queue").selected(true))
+    }
+
+    @Test
+    fun settingsShowsEverySectionInOrderWithoutTheBottomBar() {
+        openSettings()
+        awaitGone("the tab bar under Settings", res("tab_queue"))
+        for (tag in listOf("auth_token", "setting_skip_back", "setting_skip_forward", "setting_assigned_speed", "setting_wifi_only")) {
+            awaitPresent("the control $tag", res(tag))
+        }
+        device.pressBack()
+        awaitPresent("Queue tab selected", By.res("tab_queue").selected(true))
+    }
+
+    @Test
+    fun aChoiceIsSavedAtOnceAndShownInTheRow() {
+        openSettings()
+        val original = 15 // the default; the test starts from a fresh install or one it has restored
+        // The description is a separate node from the tagged row in the accessibility tree, so match it alone.
+        try {
+            click(res("setting_skip_back"))
+            click(res("setting_skip_back_option_10"))
+            awaitPresent("the row shows 10 seconds", By.desc("Skip back, 10 seconds"))
+        } finally {
+            click(res("setting_skip_back"))
+            click(res("setting_skip_back_option_$original"))
+            awaitPresent("the row shows $original seconds", By.desc("Skip back, $original seconds"))
+        }
+    }
+
+    @Test
+    fun aSwitchTogglesFromItsLabelAndStoresTheChoice() {
+        openSettings()
+        val before = waitFresh(10_000, Until.findObject(res("setting_wifi_only")))!!.isChecked
+        click(res("setting_wifi_only"))
+        awaitPresent("the switch flipped", By.res("setting_wifi_only").checked(!before))
+        click(res("setting_wifi_only"))
+        awaitPresent("the switch restored", By.res("setting_wifi_only").checked(before))
     }
 }

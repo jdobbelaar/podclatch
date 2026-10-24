@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.podclatch.Config
+import com.podclatch.domain.SettingsChoices
 import com.podclatch.domain.SpeedMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -66,6 +67,12 @@ interface SettingsRepository {
      * [speed] keeps the stored assigned speed and only sets the mode.
      */
     suspend fun assignSpeed(speed: Float?)
+
+    /**
+     * Stores [speed] as the assigned speed and leaves the mode alone (Settings is not the Speed button).
+     * Limited to 0.5 to 3.0; see [SettingsChoices.assignedSpeedToStore].
+     */
+    suspend fun setAssignedSpeed(speed: Float)
 
     /** Whether automatic downloads wait for an unmetered network (spec section 4; default true). */
     suspend fun setDownloadWifiOnly(enabled: Boolean)
@@ -141,6 +148,11 @@ class DataStoreSettingsRepository @Inject constructor(
             if (speed != null) it[ASSIGNED_SPEED] = speed
             it[SPEED_MODE] = SpeedMode.ASSIGNED.name
         }
+    }
+
+    override suspend fun setAssignedSpeed(speed: Float) {
+        val stored = SettingsChoices.assignedSpeedToStore(speed)
+        dataStore.edit { it[ASSIGNED_SPEED] = stored }
     }
 
     override suspend fun setDownloadWifiOnly(enabled: Boolean) {

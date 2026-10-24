@@ -36,6 +36,7 @@ import com.podclatch.domain.TokenRejection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -358,35 +359,37 @@ private class MemorySettings : SettingsRepository {
     val flow = MutableStateFlow(Settings(serverUrl = "https://pod.example.com", authToken = "test-token"))
     override val settings: Flow<Settings> = flow
     override suspend fun saveConnection(serverUrl: String, authToken: String) {
-        flow.value = flow.value.copy(serverUrl = serverUrl, authToken = authToken)
+        flow.update { it.copy(serverUrl = serverUrl, authToken = authToken) }
     }
 
     override suspend fun clearToken() {
-        flow.value = flow.value.copy(authToken = "")
+        flow.update { it.copy(authToken = "") }
     }
 
     override suspend fun setLastSyncRev(rev: Long) {
-        flow.value = flow.value.copy(lastSyncRev = rev)
+        flow.update { it.copy(lastSyncRev = rev) }
     }
 
     override suspend fun setSyncIntervalHours(hours: Int) {
-        flow.value = flow.value.copy(syncIntervalHours = hours)
+        flow.update { it.copy(syncIntervalHours = hours) }
     }
 
     override suspend fun setSkipIntervals(backSec: Int, forwardSec: Int) {
-        flow.value = flow.value.copy(skipBackSec = backSec, skipForwardSec = forwardSec)
+        flow.update { it.copy(skipBackSec = backSec, skipForwardSec = forwardSec) }
     }
 
     override suspend fun toggleSpeedMode() = Unit
 
     override suspend fun assignSpeed(speed: Float?) = Unit
 
+    override suspend fun setAssignedSpeed(speed: Float) = Unit
+
     override suspend fun setDownloadWifiOnly(enabled: Boolean) {
-        flow.value = flow.value.copy(downloadWifiOnly = enabled)
+        flow.update { it.copy(downloadWifiOnly = enabled) }
     }
 
     override suspend fun setDownloadAheadPerFeed(count: Int) {
-        flow.value = flow.value.copy(downloadAheadPerFeed = count)
+        flow.update { it.copy(downloadAheadPerFeed = count) }
     }
 
     override suspend fun setAutoDeletePlayedDownloads(enabled: Boolean) {
@@ -394,7 +397,7 @@ private class MemorySettings : SettingsRepository {
     }
 
     override suspend fun setNotifyNewEpisodes(enabled: Boolean) {
-        flow.value = flow.value.copy(notifyNewEpisodes = enabled)
+        flow.update { it.copy(notifyNewEpisodes = enabled) }
     }
 }
 

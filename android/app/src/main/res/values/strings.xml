@@ -46,7 +46,7 @@
     <string name="tab_queue">Queue</string>
     <string name="tab_feeds">Feeds</string>
     <string name="more_options">More options</string>
-    <string name="menu_connection_settings">Connection settings</string>
+    <string name="menu_settings">Settings</string>
     <string name="back">Back</string>
 
     <!-- Queue placeholder -->
@@ -197,4 +197,38 @@
     <string name="queue_download_percent">%1$d percent downloaded</string>
     <string name="queue_downloading">Downloading</string>
     <string name="queue_sync_now_description">Sync now</string>
+
+    <!-- Settings (US-17) -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_server">Server connection</string>
+    <string name="settings_section_playback">Playback</string>
+    <string name="settings_section_downloads">Downloads</string>
+    <string name="settings_section_sync">Sync and notifications</string>
+    <string name="connection_saved">Saved.</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_skip_back">Skip back</string>
+    <string name="settings_skip_forward">Skip forward</string>
+    <string name="settings_assigned_speed">Assigned speed</string>
+    <string name="settings_wifi_only">Download only on Wi-Fi</string>
+    <string name="settings_download_ahead">Download ahead per Feed</string>
+    <string name="settings_auto_delete">Delete played downloads</string>
+    <string name="settings_sync_interval">Sync interval</string>
+    <string name="settings_notify_new">Notify about new episodes</string>
+    <string name="settings_value_description">%1$s, %2$s</string>
+    <string name="settings_on">on</string>
+    <string name="settings_off">off</string>
+    <string name="settings_notify_blocked">Notifications are blocked for PodClatch</string>
+    <string name="settings_notify_open_settings">Open notification settings</string>
+    <plurals name="settings_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <plurals name="settings_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="settings_episodes">
+        <item quantity="one">%d episode</item>
+        <item quantity="other">%d episodes</item>
+    </plurals>
 </resources>

@@ -35,17 +35,17 @@ import com.podclatch.ui.player.miniPlayerVisible
 import com.podclatch.ui.feeds.FeedsScreen
 import com.podclatch.ui.subscribe.SUBSCRIBE_OUTCOME_KEY
 import com.podclatch.ui.subscribe.SubscribeOutcome
+import com.podclatch.ui.settings.SettingsScreen
 import com.podclatch.ui.subscribe.SubscribeScreen
 
 /**
  * The single NavHost: Queue (the start) and Feeds are the top-level destinations with the bottom bar;
- * Subscribe and Feed Detail are full screens above Feeds. Back, tab state, and rotation are handled by
+ * Subscribe and Feed Detail are full screens above Feeds, and Settings is a full screen above either tab. Back, tab state, and rotation are handled by
  * NavController's standard saved state.
  */
 @Composable
 fun MainNav(
     navController: NavHostController,
-    onOpenConnection: () -> Unit,
     openQueueRequested: Boolean = false,
     onOpenQueueHandled: () -> Unit = {},
 ) {
@@ -96,7 +96,7 @@ fun MainNav(
         },
     ) { padding ->
         NavHost(navController, startDestination = Queue, modifier = Modifier.padding(padding)) {
-            composable<Queue> { QueueScreen(onOpenConnection) }
+            composable<Queue> { QueueScreen(onOpenSettings = { navController.navigate(Settings) { launchSingleTop = true } }) }
             composable<Feeds> { feedsEntry ->
                 // The Subscribe view leaves its outcome here before it pops; Feeds reads it once.
                 val handle = feedsEntry.savedStateHandle
@@ -105,7 +105,7 @@ fun MainNav(
                 FeedsScreen(
                     onOpenFeed = { id -> navController.navigate(FeedDetail(id)) { launchSingleTop = true } },
                     onSubscribe = { navController.navigate(Subscribe) { launchSingleTop = true } },
-                    onOpenConnection = onOpenConnection,
+                    onOpenSettings = { navController.navigate(Settings) { launchSingleTop = true } },
                     subscribeOutcome = outcome,
                     onSubscribeOutcomeHandled = { handle[SUBSCRIBE_OUTCOME_KEY] = null },
                 )
@@ -120,6 +120,7 @@ fun MainNav(
                 )
             }
             composable<FeedDetail> { FeedDetailScreen(onBack = { navController.popBackStack() }) }
+            composable<Settings> { SettingsScreen(onBack = { navController.popBackStack() }) }
             composable<Player> { PlayerScreen(onClose = { navController.popBackStack() }) }
         }
     }

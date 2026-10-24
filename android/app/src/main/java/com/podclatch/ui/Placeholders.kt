@@ -34,14 +34,13 @@ import com.podclatch.R
 
 /**
  * The top bar of a tab: its title (with an optional [subtitle] line under it), the tab's own [actions], and a
- * "More options" menu. "Connection settings" is a temporary stand-in for the Settings screen (US-17), so
- * the connection screen stays reachable.
+ * "More options" menu, whose "Settings" item calls [onOpenSettings].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TabTopBar(
     title: String,
-    onOpenConnection: () -> Unit,
+    onOpenSettings: () -> Unit,
     subtitle: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
@@ -65,12 +64,12 @@ fun TabTopBar(
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.menu_connection_settings)) },
+                    text = { Text(stringResource(R.string.menu_settings)) },
                     onClick = {
                         expanded = false
-                        onOpenConnection()
+                        onOpenSettings()
                     },
-                    modifier = Modifier.testTag("menu_connection_settings"),
+                    modifier = Modifier.testTag("menu_settings"),
                 )
             }
         },

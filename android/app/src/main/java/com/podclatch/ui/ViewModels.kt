@@ -37,8 +37,8 @@ data class ConnectionUiState(
     val verified: Pair<String, String>? = null,
     val confirmSwitch: Boolean = false,
     val saving: Boolean = false,
-    /** Opened from the tab menu, so Cancel and system Back go back there. */
-    val fromHome: Boolean = false,
+    /** The last Save went through; shown until the next edit. */
+    val saved: Boolean = false,
 ) {
     val canTest: Boolean get() = url.isNotBlank() && token.isNotBlank() && !testing && !saving
 
@@ -59,30 +59,28 @@ class ConnectionViewModel @Inject constructor(
     val tokenRejected: StateFlow<Boolean> = tokenRejection.rejected
 
     init {
-        // Whenever the app is not configured (first start, or the token was rejected), start from the
-        // saved URL with an empty token. The stored token is never displayed.
+        // Start from the saved URL with an empty token, and again whenever the app stops being configured
+        // (the token was rejected). The stored token is never displayed.
         viewModelScope.launch {
+            var first = true
             settings.settings.map { it.isConfigured }.distinctUntilChanged().collect { configured ->
-                if (!configured) resetForm(fromHome = false)
+                if (first || !configured) resetForm()
+                first = false
             }
         }
     }
 
-    fun openFromHome() = resetForm(fromHome = true)
-
-    fun cancel() = _state.update { it.copy(fromHome = false) }
-
     // An edit makes the last result stale, so it is cleared along with the Save enablement.
-    fun onUrlChange(value: String) = _state.update { it.copy(url = value, message = null) }
+    fun onUrlChange(value: String) = _state.update { it.copy(url = value, message = null, saved = false) }
 
-    fun onTokenChange(value: String) = _state.update { it.copy(token = value, message = null) }
+    fun onTokenChange(value: String) = _state.update { it.copy(token = value, message = null, saved = false) }
 
     fun toggleShowToken() = _state.update { it.copy(showToken = !it.showToken) }
 
     fun testConnection() {
         val current = _state.value
         if (!current.canTest) return
-        _state.update { it.copy(testing = true, message = null) }
+        _state.update { it.copy(testing = true, message = null, saved = false) }
         viewModelScope.launch {
             val result = connection.test(current.url, current.token)
             _state.update {
@@ -119,16 +117,16 @@ class ConnectionViewModel @Inject constructor(
         _state.update { it.copy(saving = true) }
         val result = connection.save(current.url, current.token)
         if (result == SaveResult.Saved) {
-            _state.update { it.copy(saving = false, token = "", verified = null, message = null, fromHome = false) }
+            _state.update { it.copy(saving = false, token = "", verified = null, message = null, saved = true) }
         } else {
             _state.update { it.copy(saving = false, verified = null) }
         }
     }
 
-    private fun resetForm(fromHome: Boolean) {
+    private fun resetForm() {
         viewModelScope.launch {
             val savedUrl = settings.current().serverUrl
-            _state.value = ConnectionUiState(url = savedUrl, fromHome = fromHome)
+            _state.value = ConnectionUiState(url = savedUrl)
         }
     }
 }
