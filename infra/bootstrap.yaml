@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  PodClatch bootstrap. Creates the GitHub OIDC identity provider (optional), the ECR repository
+  podclatch-server, and a least-privilege role the GitHub Actions pipeline assumes. Deployed once
+  by the human with admin credentials. Stack name: podclatch-bootstrap.
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Default: jdobbelaar/podclatch
+    AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    Description: The one GitHub repository (owner/name) whose workflows may assume the deploy role.
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      An AWS account can have only one GitHub OIDC provider. Say false if the account already has
+      one, and then fill in ExistingOidcProviderArn.
+  ExistingOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: The ARN of the existing token.actions.githubusercontent.com provider. Only used when CreateOidcProvider is false.
+
+Rules:
+  ExistingProviderArnGiven:
+    RuleCondition: !Equals [!Ref CreateOidcProvider, "false"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExistingOidcProviderArn, ""]]
+        AssertDescription: ExistingOidcProviderArn is required when CreateOidcProvider is false.
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  # No ThumbprintList: AWS verifies the GitHub OIDC certificate chain itself and the property is
+  # optional, so there is no thumbprint to keep current.
+  OidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: podclatch-server
+      ImageTagMutability: MUTABLE # the moving tags dev and prod need this
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: >-
+          {"rules":[
+          {"rulePriority":1,"description":"Keep the images the dev and prod tags point at",
+          "selection":{"tagStatus":"tagged","tagPrefixList":["dev","prod"],"countType":"imageCountMoreThan","countNumber":10},
+          "action":{"type":"expire"}},
+          {"rulePriority":2,"description":"Keep the last 20 other images",
+          "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},
+          "action":{"type":"expire"}}]}
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: podclatch-github-deploy
+      Description: Assumed by GitHub Actions for the dev and production environments. Pushes and retags images; reads App Runner.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If [CreateProvider, !Ref OidcProvider, !Ref ExistingOidcProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:${GitHubRepository}:environment:dev"
+                  - !Sub "repo:${GitHubRepository}:environment:production"
+      Policies:
+        - PolicyName: push-and-retag-images
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: EcrLogin
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*" # this one action does not support resource-level permissions
+              - Sid: PushPullAndRetagOneRepository
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !GetAtt EcrRepository.Arn
+              - Sid: DescribeAppRunnerServices
+                Effect: Allow
+                Action: apprunner:DescribeService
+                Resource: !Sub "arn:${AWS::Partition}:apprunner:${AWS::Region}:${AWS::AccountId}:service/podclatch-*/*"
+              - Sid: ListAppRunnerServices
+                Effect: Allow
+                Action: apprunner:ListServices
+                Resource: "*" # List calls do not support resource-level permissions
+
+Outputs:
+  DeployRoleArn:
+    Description: Value for the GitHub repository variable AWS_DEPLOY_ROLE_ARN.
+    Value: !GetAtt DeployRole.Arn
+  EcrRepositoryUri:
+    Description: Where the server image is pushed.
+    Value: !GetAtt EcrRepository.RepositoryUri
+  OidcProviderArn:
+    Description: The GitHub OIDC provider the deploy role trusts.
+    Value: !If [CreateProvider, !Ref OidcProvider, !Ref ExistingOidcProviderArn]
