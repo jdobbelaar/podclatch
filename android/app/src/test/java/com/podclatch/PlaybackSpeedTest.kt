@@ -46,11 +46,12 @@ class PlaybackSpeedTest {
     // ---- defaults and persistence ----
 
     @Test
-    fun theDefaultsAreOnePointTwoFiveAndAssigned() = runBlocking {
+    fun theDefaultsAreOnePointThreeAndAssigned() = runBlocking {
         val settings = repo().current()
-        assertEquals(1.25f, settings.assignedSpeed, 0f)
+        assertEquals(1.3f, settings.assignedSpeed, 0f)
+        assertEquals(1.3f, Config.DEFAULT_ASSIGNED_SPEED, 0f)
         assertEquals(SpeedMode.ASSIGNED, settings.speedMode)
-        assertEquals(1.25f, Settings().assignedSpeed, 0f)
+        assertEquals(1.3f, Settings().assignedSpeed, 0f)
         assertEquals(SpeedMode.ASSIGNED, Settings().speedMode)
     }
 
@@ -142,9 +143,10 @@ class PlaybackSpeedTest {
     }
 
     @Test
-    fun keepAssignedSwitchesTheModeAndKeepsTheOddDefaultExactly() = runBlocking {
+    fun keepAssignedSwitchesTheModeAndKeepsAnOddStoredSpeedExactly() = runBlocking {
         val repo = repo()
         val useCase = PlaybackSpeedUseCase(repo)
+        repo.assignSpeed(1.25f)
         useCase.toggle()
         useCase.keepAssigned()
         assertEquals(PlaybackSpeedState(1.25f, SpeedMode.ASSIGNED), useCase.stateNow())
@@ -163,7 +165,7 @@ class PlaybackSpeedTest {
         val fake = FakeSettings()
         val useCase = PlaybackSpeedUseCase(fake)
         runBlocking { useCase.toggle() }
-        assertEquals(PlaybackSpeedState(1.25f, SpeedMode.NORMAL), runBlocking { useCase.stateNow() })
+        assertEquals(PlaybackSpeedState(1.3f, SpeedMode.NORMAL), runBlocking { useCase.stateNow() })
     }
 
     private suspend fun PlaybackSpeedUseCase.stateNow() = state.first()

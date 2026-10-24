@@ -37,12 +37,12 @@ class SpeedButtonInstrumentedTest {
     private lateinit var saved: Settings
 
     @Before
-    fun startAssignedAtOnePointTwoFive() {
+    fun startAssignedAtOnePointThree() {
         saved = runBlocking { settings.current() }
-        runBlocking { settings.assignSpeed(1.25f) }
-        awaitStored(SpeedMode.ASSIGNED, 1.25f)
+        runBlocking { settings.assignSpeed(1.3f) }
+        awaitStored(SpeedMode.ASSIGNED, 1.3f)
         h.connect()
-        awaitLabel("1.25x")
+        awaitLabel("1.3x")
     }
 
     @After
@@ -116,7 +116,7 @@ class SpeedButtonInstrumentedTest {
             assertTrue(buttons[1].slots.contains(CommandButton.SLOT_FORWARD))
             val speedButton = buttons[2]
             assertEquals(SPEED_COMMAND_ACTION, speedButton.sessionCommand?.customAction)
-            assertEquals("1.25x", speedButton.displayName.toString())
+            assertEquals("1.3x", speedButton.displayName.toString())
             assertNotNull("the generated icon address", speedButton.iconUri)
             assertFalse(speedButton.slots.contains(CommandButton.SLOT_BACK) || speedButton.slots.contains(CommandButton.SLOT_FORWARD))
             // Exactly one custom command is available: no long-press and no speed assignment.
@@ -140,21 +140,21 @@ class SpeedButtonInstrumentedTest {
     @Test
     fun pressingTheCommandTogglesTheModeThePlayerAndTheLabel() {
         loadTone()
-        awaitPlayerSpeed(1.25f)
+        awaitPlayerSpeed(1.3f)
         assertEquals(SessionResult.RESULT_SUCCESS, press().resultCode)
-        awaitStored(SpeedMode.NORMAL, 1.25f)
+        awaitStored(SpeedMode.NORMAL, 1.3f)
         awaitPlayerSpeed(1.0f)
         awaitLabel("1.0x")
         assertEquals(SessionResult.RESULT_SUCCESS, press().resultCode)
-        awaitStored(SpeedMode.ASSIGNED, 1.25f)
-        awaitPlayerSpeed(1.25f)
-        awaitLabel("1.25x")
+        awaitStored(SpeedMode.ASSIGNED, 1.3f)
+        awaitPlayerSpeed(1.3f)
+        awaitLabel("1.3x")
     }
 
     @Test
     fun pressingWithNothingLoadedStillFlipsTheMode() {
         assertEquals(SessionResult.RESULT_SUCCESS, press().resultCode)
-        awaitStored(SpeedMode.NORMAL, 1.25f)
+        awaitStored(SpeedMode.NORMAL, 1.3f)
         awaitLabel("1.0x")
     }
 
@@ -164,7 +164,7 @@ class SpeedButtonInstrumentedTest {
         runBlocking { useCase.toggle() }
         awaitLabel("1.0x")
         runBlocking { useCase.toggle() }
-        awaitLabel("1.25x")
+        awaitLabel("1.3x")
         // A new assigned speed while ASSIGNED.
         runBlocking { useCase.assign(1.5f) }
         awaitLabel("1.5x")

@@ -199,7 +199,7 @@ PendingStateWrite        // the Sync outbox; one row per episode (latest wins)
 ```
 serverUrl: String
 authToken: String             // stored in app-private storage; never logged
-assignedSpeed: Float = 1.25   // the global "assigned" speed, 0.5-3.0 in 0.1 steps
+assignedSpeed: Float = 1.3    // the global "assigned" speed, 0.5-3.0 in 0.1 steps
 speedMode: ASSIGNED | NORMAL = ASSIGNED   // NORMAL = temporarily 1.0 (§5)
 skipBackSec: Int = 15
 skipForwardSec: Int = 30
@@ -558,7 +558,7 @@ interface so M3 can swap in the database.
 - Mini player above the bottom nav on all screens; tap expands to full
   player: artwork, title, seek bar, elapsed/remaining, play/pause, skip
   back/forward (Settings values), and a **Speed button**.
-- The Speed button **always shows the current speed** (e.g. "1.25x" or
+- The Speed button **always shows the current speed** (e.g. "1.3x" or
   "1.0x") and updates the moment it changes.
 - **Tap**: toggles between the globally assigned speed and 1.0 (§5.3 Playback
   speed).
@@ -652,7 +652,7 @@ unused so other story numbers stay stable. Do not create an issue for it.)
   the phone media notification. Pressing it runs the §5.3 toggle between the
   assigned speed and 1.0. Because Android Auto shows an icon rather than
   text, generate the icon so it **always shows the current speed** (e.g. a
-  bitmap icon rendering "1.25x"), refreshed whenever the speed changes; also
+  bitmap icon rendering "1.3x"), refreshed whenever the speed changes; also
   set the label/content description to the same text. There is **no
   long-press** or speed-assignment UI in Android Auto (assigning is phone
   only). Android Auto limits how many custom actions it shows, so this must be

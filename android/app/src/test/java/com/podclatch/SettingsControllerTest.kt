@@ -32,7 +32,7 @@ class SettingsControllerTest {
         val s = await("the defaults") { true }
         assertEquals(15, s.skipBackSec)
         assertEquals(30, s.skipForwardSec)
-        assertEquals(1.25f, s.assignedSpeed)
+        assertEquals(1.3f, s.assignedSpeed)
         assertEquals(true, s.wifiOnly)
         assertEquals(3, s.downloadAhead)
         assertEquals(true, s.autoDelete)

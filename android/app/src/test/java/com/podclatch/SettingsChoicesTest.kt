@@ -30,7 +30,7 @@ class SettingsChoicesTest {
     }
 
     @Test
-    fun theDefaultSpeedIsItsOwnEntryBetweenOnePointTwoAndOnePointThree() {
+    fun aStoredOnePointTwoFiveIsItsOwnEntryBetweenOnePointTwoAndOnePointThree() {
         val speeds = SettingsChoices.speedsWithCurrent(1.25f)
         assertEquals(27, speeds.size)
         assertEquals(listOf(1.2f, 1.25f, 1.3f), speeds.subList(7, 10))
@@ -53,11 +53,11 @@ class SettingsChoicesTest {
     }
 
     @Test
-    fun theStoredSpeedKeepsFiveHundredthsAndOtherwiseRoundsToTenths() {
-        assertEquals(1.25f, SettingsChoices.assignedSpeedToStore(1.25f))
+    fun theStoredSpeedIsLimitedAndRoundedToTenths() {
+        assertEquals(1.3f, SettingsChoices.assignedSpeedToStore(1.25f))
         assertEquals(0.5f, SettingsChoices.assignedSpeedToStore(0.44f))
         assertEquals(3.0f, SettingsChoices.assignedSpeedToStore(3.04f))
-        assertEquals(1.25f, SettingsChoices.assignedSpeedToStore(Float.NaN))
+        assertEquals(1.3f, SettingsChoices.assignedSpeedToStore(Float.NaN))
         assertEquals(1.3f, SettingsChoices.assignedSpeedToStore(1.34f))
         assertEquals(0.5f, SettingsChoices.assignedSpeedToStore(-1f))
         assertEquals(3.0f, SettingsChoices.assignedSpeedToStore(Float.POSITIVE_INFINITY))

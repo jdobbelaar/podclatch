@@ -2,13 +2,13 @@ package com.podclatch.domain
 
 import kotlin.math.pow
 
-/** The text on the Speed button of the session (notification and car): "1.25x" when ASSIGNED, "1.0x" when NORMAL. */
+/** The text on the Speed button of the session (notification and car): "1.3x" when ASSIGNED, "1.0x" when NORMAL. */
 fun speedButtonLabel(state: PlaybackSpeedState): String = formatSpeed(state.currentSpeed)
 
 /**
  * The drawable that shows [label] for a controller that can only use a resource icon (the system's media
  * controls and Android Auto read a custom action's icon from a resource), for example "ic_speed_1_25x".
- * There is one for every tenth from 0.5x to 3.0x and one for the default 1.25x.
+ * There is one for every tenth from 0.5x to 3.0x and one for a stored 1.25x.
  */
 fun speedIconResName(label: String): String = "ic_speed_" + label.replace('.', '_')
 
@@ -28,7 +28,7 @@ object SpeedIconSpec {
     /** The dark surface the text sits on (ARGB); media notifications and car screens are dark. */
     const val SURFACE_COLOR = 0xFF202124.toInt()
 
-    /** Text height as a fraction of the bitmap size, shrunk for longer labels so "1.25x" never clips. */
+    /** Text height as a fraction of the bitmap size, shrunk for longer labels so "1.25x" (an older stored speed) never clips. */
     fun textSizePx(label: String): Float {
         val fraction = when {
             label.length <= 4 -> 0.40f

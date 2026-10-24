@@ -3,11 +3,17 @@ package com.podclatch
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.podclatch.data.repo.DataStoreSettingsRepository
 import com.podclatch.data.repo.Settings
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
+import com.podclatch.domain.PlaybackSpeedState
+import com.podclatch.domain.SettingsChoices
 import com.podclatch.domain.SpeedMode
+import com.podclatch.domain.formatSpeed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -153,16 +159,38 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun setAssignedSpeedKeepsTheDefaultAndLimitsTheRange() = runBlocking<Unit> {
+    fun setAssignedSpeedRoundsToTenthsAndLimitsTheRange() = runBlocking<Unit> {
         val repo = repo(File(tmp.root, "range.preferences_pb"))
-        repo.setAssignedSpeed(1.25f)
-        assertEquals(1.25f, repo.current().assignedSpeed)
+        repo.setAssignedSpeed(1.34f)
+        assertEquals(1.3f, repo.current().assignedSpeed)
         repo.setAssignedSpeed(0.44f)
         assertEquals(0.5f, repo.current().assignedSpeed)
         repo.setAssignedSpeed(3.04f)
         assertEquals(3.0f, repo.current().assignedSpeed)
         repo.setAssignedSpeed(2.0f)
         repo.setAssignedSpeed(Float.NaN)
+        assertEquals(1.3f, repo.current().assignedSpeed)
+    }
+
+    @Test
+    fun aStoredOnePointTwoFiveIsReadAsIsAndOpeningTheScreensWritesNothing() = runBlocking<Unit> {
+        val file = File(tmp.root, "legacy.preferences_pb")
+        val seedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        PreferenceDataStoreFactory.create(scope = seedScope) { file }
+            .edit { it[floatPreferencesKey("assignedSpeed")] = 1.25f }
+        seedScope.coroutineContext[kotlinx.coroutines.Job]!!.cancelAndJoin()
+        val before = file.readBytes()
+
+        val repo = repo(file)
+        val settings = repo.current()
+        assertEquals(1.25f, settings.assignedSpeed)
+        assertEquals("1.25x", formatSpeed(settings.assignedSpeed))
+        assertEquals(1.25f, PlaybackSpeedState(settings.assignedSpeed, settings.speedMode).currentSpeed)
         assertEquals(1.25f, repo.current().assignedSpeed)
+        // The Settings screen and the assign sheet list it as its own entry.
+        assertTrue(SettingsChoices.speedsWithCurrent(settings.assignedSpeed).contains(1.25f))
+        assertEquals(27, SettingsChoices.speedsWithCurrent(settings.assignedSpeed).size)
+        // Reading and listing wrote nothing.
+        assertTrue(before.contentEquals(file.readBytes()))
     }
 }

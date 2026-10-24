@@ -49,7 +49,7 @@ class PlayerControllerTest {
     fun theStateStartsWithTheDefaultsAndNothingLoaded() {
         val state = controller.await("defaults") { it.skipBackSec == 15 && it.skipForwardSec == 30 }
         assertEquals(null, state.playback.episodeId)
-        assertEquals(PlaybackSpeedState(1.25f, SpeedMode.ASSIGNED), state.speed)
+        assertEquals(PlaybackSpeedState(1.3f, SpeedMode.ASSIGNED), state.speed)
         assertEquals(0L, state.positionMs)
     }
 
@@ -122,11 +122,11 @@ class PlayerControllerTest {
 
     @Test
     fun aTapOnTheSpeedButtonTogglesBetweenAssignedAndNormal() {
-        controller.await("assigned 1.25") { it.speed == PlaybackSpeedState(1.25f, SpeedMode.ASSIGNED) }
+        controller.await("assigned 1.3") { it.speed == PlaybackSpeedState(1.3f, SpeedMode.ASSIGNED) }
         controller.toggleSpeed()
         controller.await("normal: current speed 1.0") { it.speed.mode == SpeedMode.NORMAL && it.speed.currentSpeed == 1.0f }
         controller.toggleSpeed()
-        controller.await("assigned: current speed 1.25") { it.speed.mode == SpeedMode.ASSIGNED && it.speed.currentSpeed == 1.25f }
+        controller.await("assigned: current speed 1.3") { it.speed.mode == SpeedMode.ASSIGNED && it.speed.currentSpeed == 1.3f }
     }
 
     @Test
@@ -143,13 +143,14 @@ class PlayerControllerTest {
         controller.toggleSpeed()
         controller.await("normal") { it.speed.mode == SpeedMode.NORMAL }
 
-        controller.confirmSpeed(2.0f, 1.25f)
+        controller.confirmSpeed(2.0f, 1.3f)
 
         controller.await("assigned 2.0") { it.speed == PlaybackSpeedState(2.0f, SpeedMode.ASSIGNED) }
     }
 
     @Test
-    fun setWithoutTouchingKeepsTheOddDefaultAndLeavesNormalMode() {
+    fun setWithoutTouchingKeepsAnOddStoredSpeedAndLeavesNormalMode() {
+        runBlocking { settings.assignSpeed(1.25f) }
         controller.toggleSpeed()
         controller.await("normal") { it.speed.mode == SpeedMode.NORMAL }
 
