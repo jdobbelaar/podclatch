@@ -29,7 +29,16 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
+import android.os.Bundle
+import com.podclatch.domain.LabelCache
+import com.podclatch.domain.PlaybackSpeedState
+import com.podclatch.domain.SpeedMode
+import com.podclatch.domain.speedButtonLabel
+import com.podclatch.domain.speedIconResName
+import kotlinx.coroutines.flow.combine
 import androidx.media3.session.MediaSession
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -124,6 +133,14 @@ class PlaybackService : MediaLibraryService() {
 
     @Volatile private var skipForwardSec = Config.DEFAULT_SKIP_FORWARD_SEC
 
+    /** The Speed button's text; set from the speed setting on every change (and read once the first value arrives). */
+    @Volatile private var speedLabel = speedButtonLabel(PlaybackSpeedState(Config.DEFAULT_ASSIGNED_SPEED, SpeedMode.ASSIGNED))
+
+    /** The icon is drawn again only when the text changes. */
+    private val speedIcons = LabelCache(::speedIconUri)
+
+    private val speedHandler by lazy { SpeedCommandHandler(speed::toggle) }
+
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(
@@ -136,10 +153,15 @@ class PlaybackService : MediaLibraryService() {
         ensureSession()
         startBrowseNotifier()
         scope.launch {
-            settings.settings.map { it.skipBackSec to it.skipForwardSec }.distinctUntilChanged().collect { (back, forward) ->
+            // Any change of the skip seconds or of the speed (the phone, the car, the debug path) rebuilds the layout.
+            combine(
+                settings.settings.map { it.skipBackSec to it.skipForwardSec }.distinctUntilChanged(),
+                speed.state.map(::speedButtonLabel).distinctUntilChanged(),
+            ) { skips, label -> Triple(skips.first, skips.second, label) }.collect { (back, forward, label) ->
                 skipBackSec = back
                 skipForwardSec = forward
-                session?.setMediaButtonPreferences(skipButtons())
+                speedLabel = label
+                session?.setMediaButtonPreferences(buttons())
             }
         }
     }
@@ -187,7 +209,7 @@ class PlaybackService : MediaLibraryService() {
         val wrapped = SkipForwardingPlayer(exo, { skipBackSec * 1000L }, { skipForwardSec * 1000L })
         return MediaLibrarySession.Builder(this, wrapped, LibraryCallback())
             .setSessionActivity(sessionActivity())
-            .setMediaButtonPreferences(skipButtons())
+            .setMediaButtonPreferences(buttons())
             .build()
             .also { session = it }
     }
@@ -393,6 +415,19 @@ class PlaybackService : MediaLibraryService() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
+    /** The drawable that reads [label]; a plain speedometer if a label has none. */
+    private fun speedIconRes(label: String): Int =
+        resources.getIdentifier(speedIconResName(label), "drawable", packageName).takeIf { it != 0 } ?: R.drawable.ic_speed
+
+    /** Skip back, skip forward, then the Speed button as the first button outside the two slots (no next or previous). */
+    private fun buttons(): ImmutableList<CommandButton> {
+        val label = speedLabel
+        return ImmutableList.builder<CommandButton>()
+            .addAll(skipButtons())
+            .add(speedButton(label, speedIcons.get(label), speedIconRes(label)))
+            .build()
+    }
+
     /** Skip back and skip forward on the two sides of the notification, labelled with the current seconds. */
     private fun skipButtons(): ImmutableList<CommandButton> = ImmutableList.of(
         CommandButton.Builder(skipIcon(skipBackSec, back = true))
@@ -431,6 +466,27 @@ class PlaybackService : MediaLibraryService() {
      * `onGetSearchResult` keep Media3's "not supported" answers.
      */
     private inner class LibraryCallback : MediaLibrarySession.Callback {
+        // The Speed command is allowed for every controller the session accepts (the system, Android Auto, the notification).
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
+            MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                .setAvailableSessionCommands(
+                    MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(speedSessionCommand).build(),
+                )
+                .build()
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> = scope.future {
+            if (speedHandler.handle(customCommand)) {
+                SessionResult(SessionResult.RESULT_SUCCESS)
+            } else {
+                SessionResult(SessionError.ERROR_NOT_SUPPORTED)
+            }
+        }
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
