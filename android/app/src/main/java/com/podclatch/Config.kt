@@ -81,7 +81,7 @@ object Config {
     const val PLAYBACK_CONNECT_TIMEOUT_MS = 10_000L
 
     /** The assigned speed until the user assigns another (spec section 4). */
-    const val DEFAULT_ASSIGNED_SPEED = 1.25f
+    const val DEFAULT_ASSIGNED_SPEED = 1.3f
 
     /** The assigned speed ranges from [SPEED_MIN] to [SPEED_MAX] in [SPEED_STEP] steps. */
     const val SPEED_MIN = 0.5f

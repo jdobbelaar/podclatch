@@ -2,7 +2,6 @@ package com.podclatch.domain
 
 import com.podclatch.Config
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /** The pure rules behind the Settings screen's choices (US-17): the option lists and how stored values map onto them. */
 object SettingsChoices {
@@ -38,16 +37,10 @@ object SettingsChoices {
         count.coerceIn(Config.MIN_DOWNLOAD_AHEAD_PER_FEED, Config.MAX_DOWNLOAD_AHEAD_PER_FEED)
 
     /**
-     * The speed to store from Settings: limited to 0.5 to 3.0, NaN becoming the default. A value that already sits
-     * on a 0.05 step (the stored default 1.25 does) is kept as it is; anything else is rounded to 0.1.
+     * The speed to store from Settings: limited to 0.5 to 3.0 and rounded to 0.1, NaN becoming the default.
+     * Reading never passes through here, so an older stored 1.25 stays exactly as it is.
      */
-    fun assignedSpeedToStore(speed: Float): Float {
-        if (speed.isNaN()) return Config.DEFAULT_ASSIGNED_SPEED
-        val clamped = speed.coerceIn(Config.SPEED_MIN, Config.SPEED_MAX)
-        val twentieths = clamped * 20.0
-        if (abs(twentieths - twentieths.roundToInt()) < 1e-3) return (twentieths.roundToInt() / 20.0).toFloat()
-        return normalizeSpeed(clamped)
-    }
+    fun assignedSpeedToStore(speed: Float): Float = normalizeSpeed(speed)
 
     /** Whether the "Notifications are blocked" note shows: the setting is on, the OS asks for a permission, and it is missing. */
     fun notificationsBlocked(sdkInt: Int, notifyEnabled: Boolean, permissionGranted: Boolean): Boolean =

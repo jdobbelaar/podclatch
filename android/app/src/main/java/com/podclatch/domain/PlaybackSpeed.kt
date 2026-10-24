@@ -41,7 +41,7 @@ class PlaybackSpeedUseCase @Inject constructor(private val settings: SettingsRep
     /** Assigns [speed] (rounded to 0.1, limited to 0.5 to 3.0) and switches to ASSIGNED in one edit. */
     suspend fun assign(speed: Float) = settings.assignSpeed(normalizeSpeed(speed))
 
-    /** Switches to ASSIGNED and keeps the stored assigned speed exactly as it is (for example 1.25). */
+    /** Switches to ASSIGNED and keeps the stored assigned speed exactly as it is (for example an older 1.25). */
     suspend fun keepAssigned() = settings.assignSpeed(null)
 }
 

@@ -124,8 +124,8 @@ class PlayerController(
     }
 
     /**
-     * "Set" in the speed sheet. A value the user did not move from the stored one keeps it exactly (the
-     * 1.25 default is not a multiple of 0.1) and only switches to ASSIGNED.
+     * "Set" in the speed sheet. A value the user did not move from the stored one keeps it exactly (an
+     * older stored 1.25 is not a multiple of 0.1) and only switches to ASSIGNED.
      */
     fun confirmSpeed(value: Float, initial: Float) {
         scope.launch { if (value == initial) speed.keepAssigned() else speed.assign(value) }
