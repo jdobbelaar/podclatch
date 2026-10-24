@@ -81,17 +81,11 @@ def server_logs() -> str:
     return harness.compose("logs", "--no-color", "server").stdout
 
 
-def assert_term_only_in_access_log(term: str) -> None:
-    """The term may appear only in the access log's request line.
-
-    That exception disappears with issue #64 (the access log will drop query strings). When #64
-    lands, tighten this to `assert term not in logs`.
-    """
+def assert_term_not_in_logs(term: str) -> None:
+    """The term appears nowhere in the server logs, the access log's request line included."""
     logs = server_logs()
     assert logs.strip()  # only meaningful if the server logged something
-    for line in logs.splitlines():
-        if term in line:
-            assert "GET /v1/search" in line, "the term appeared outside the access log"
+    assert term not in logs
 
 
 def test_search_maps_results_and_caps_at_25(api, fake_search):
@@ -110,7 +104,7 @@ def test_search_maps_results_and_caps_at_25(api, fake_search):
         "artworkUrl": "http://feedhost:8080/art/0.jpg",
     }
     assert fake_search.count() == 1
-    assert_term_only_in_access_log(term)
+    assert_term_not_in_logs(term)
 
 
 def test_second_identical_search_comes_from_the_cache(api, fake_search):
@@ -124,7 +118,7 @@ def test_second_identical_search_comes_from_the_cache(api, fake_search):
     assert first.json() == second.json()
     assert len(first.json()) == 3
     assert fake_search.count() == 1
-    assert_term_only_in_access_log(term)
+    assert_term_not_in_logs(term)
 
 
 def test_directory_failure_is_502(api, fake_search):
@@ -137,7 +131,7 @@ def test_directory_failure_is_502(api, fake_search):
     assert response.json() == BAD_GATEWAY
     assert fake_search.count() == 1
     assert term not in response.text
-    assert_term_only_in_access_log(term)
+    assert_term_not_in_logs(term)
 
 
 def test_search_without_the_token_is_401_and_never_reaches_the_host(api, fake_search):

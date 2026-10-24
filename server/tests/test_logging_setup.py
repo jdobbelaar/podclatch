@@ -2,6 +2,7 @@
 
 import contextlib
 import functools
+import io
 import logging
 
 import pytest
@@ -10,6 +11,7 @@ from us25_helpers import AUTH, SECRET_URL, TOKEN, StubFetcher, ep, feed_of
 
 from podclatch_server.app import create_app
 from podclatch_server.config import Settings
+from podclatch_server.logging_setup import ACCESS_LOGGER, RedactQueryFilter
 from podclatch_server.routes.feeds import get_fetcher
 
 APP_LOGGER = "podclatch_server"
@@ -138,3 +140,55 @@ def test_debug_logging_leaks_no_secret_through_subscribe_and_refresh(capsys, tmp
     assert err  # DEBUG output was captured, so the check below means something
     for forbidden in (TOKEN, "secret-db-marker", "SECRET123", "user:pw", "token=", "zebra-search"):
         assert forbidden not in err
+
+
+def access_lines(level: int, *records_args) -> str:
+    """Run access records (uvicorn's shape) through the real logger and a plain handler."""
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    access = logging.getLogger(ACCESS_LOGGER)
+    saved_level = access.level
+    access.addHandler(handler)
+    access.setLevel(level)
+    try:
+        for args in records_args:
+            access.log(level, '%s - "%s %s HTTP/%s" %d', *args)
+    finally:
+        access.removeHandler(handler)
+        access.setLevel(saved_level)
+    return stream.getvalue()
+
+
+@pytest.mark.parametrize("level", [logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR])
+def test_access_log_drops_the_query_string_at_every_level(level):
+    build()
+    out = access_lines(
+        level,
+        ("1.2.3.4:5", "GET", "/v1/search?q=canary-term&x=1", "1.1", 200),
+        ("1.2.3.4:5", "POST", "/v1/feeds?token=canary-token", "1.1", 401),
+        ("1.2.3.4:5", "GET", "/v1/episodes", "1.1", 200),
+    )
+    assert 'GET /v1/search HTTP/1.1" 200' in out
+    assert 'POST /v1/feeds HTTP/1.1" 401' in out
+    assert 'GET /v1/episodes HTTP/1.1" 200' in out
+    assert "canary" not in out
+    assert "?" not in out
+
+
+def test_access_filter_is_installed_once():
+    build()
+    build()
+    access = logging.getLogger(ACCESS_LOGGER)
+    assert len([f for f in access.filters if isinstance(f, RedactQueryFilter)]) == 1
+
+
+@pytest.mark.parametrize(
+    "args",
+    [(), ("only",), ("a", "b", 3, "d", 5), ("a", "b", "/p?q=1"), {"k": "v"}, None],
+)
+def test_access_filter_passes_unexpected_shapes_through(args):
+    record = logging.LogRecord("uvicorn.access", logging.INFO, "f", 1, "msg", None, None)
+    record.args = args
+    assert RedactQueryFilter().filter(record) is True
+    assert record.args == args

@@ -28,3 +28,13 @@ def test_query_string_never_reaches_the_server_logs(api, feedhost, unique_name, 
     has_full_url = url in logs
     assert not has_canary
     assert not has_full_url
+
+
+def test_search_term_never_reaches_the_server_logs(api):
+    canary = f"canary-{uuid.uuid4().hex}"  # made up by this test; not a secret
+    response = api.get("/v1/search", params={"q": canary})
+    assert response.status_code in (200, 502)  # the route ran; the reply itself is not the point
+
+    logs = harness.compose("logs", "--no-color", "server").stdout
+    assert "GET /v1/search" in logs  # the access line is there, so the check below means something
+    assert canary not in logs
