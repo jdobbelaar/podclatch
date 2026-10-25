@@ -31,13 +31,23 @@ class LocalNetworkFlowTest {
     private fun flow(sdk: Int = 37, granted: Boolean = false) =
         LocalNetworkFlow(scope, FakeAccess(sdk, granted), LocalHostClassifier(HostResolver { emptyList() }), proceed = { tests.incrementAndGet() })
 
-    /** Begins and waits until the flow has decided (asked or ran the test). */
+    /**
+     * Begins and waits until the flow has finished acting on its decision: the rationale is showing when it asked,
+     * the test has run when it did not. `begin` reports the decision before it takes effect, so returning on the
+     * decision alone leaves a late `Rationale` free to land over a step the test has already taken.
+     */
     private fun LocalNetworkFlow.start(host: String?, hostPort: String? = host) {
-        val before = decided.get()
-        begin(host, hostPort) { decided.incrementAndGet() }
-        awaitCondition("decision made") { decided.get() > before }
+        val decisions = decided.get()
+        val testsRun = tests.get()
+        var asked = false
+        begin(host, hostPort) {
+            asked = it
+            decided.incrementAndGet() // after the write, so the waiting thread sees `asked`
+        }
+        awaitCondition("decision made") { decided.get() > decisions }
+        if (asked) awaitState(phase, "rationale shown") { it is LocalNetworkPhase.Rationale }
+        else awaitCondition("test ran") { tests.get() > testsRun }
     }
-
     private fun LocalNetworkFlow.await(what: String, c: (LocalNetworkPhase) -> Boolean) = awaitState(phase, what, condition = c)
 
     @Test fun localHostWithoutPermissionAsksFirstAndTestsOnlyAfterAGrant() {
