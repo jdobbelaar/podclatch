@@ -7,6 +7,8 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter, SimpleLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
@@ -36,6 +38,8 @@ STATE_FIELDS = (
     "request_duration",
     "refresh_runs",
     "feeds_refreshed",
+    "logger_provider",
+    "log_handler",
 )
 
 
@@ -44,6 +48,10 @@ class Capture:
         self.spans = InMemorySpanExporter()
         self.reader = InMemoryMetricReader()
         self.log = io.StringIO()
+        self.logs = InMemoryLogRecordExporter()
+
+    def exported_logs(self) -> list:
+        return [r.log_record for r in self.logs.get_finished_logs()]
 
     def finished(self, name: str | None = None):
         spans = self.spans.get_finished_spans()
@@ -67,7 +75,8 @@ class Capture:
         spans = "".join(s.to_json() for s in self.spans.get_finished_spans())
         data = self.reader.get_metrics_data()
         metrics = data.to_json() if data else ""
-        return spans + metrics + self.log.getvalue()
+        logs = "".join(r.to_json() for r in self.logs.get_finished_logs())
+        return spans + metrics + logs + self.log.getvalue()
 
 
 @pytest.fixture
@@ -77,7 +86,11 @@ def cap(monkeypatch) -> Capture:
     capture = Capture()
     tracer_provider = TracerProvider()
     tracer_provider.add_span_processor(SimpleSpanProcessor(capture.spans))
-    telemetry.install(tracer_provider, MeterProvider(metric_readers=[capture.reader]))
+    logger_provider = LoggerProvider()
+    logger_provider.add_log_record_processor(SimpleLogRecordProcessor(capture.logs))
+    telemetry.install(
+        tracer_provider, MeterProvider(metric_readers=[capture.reader]), logger_provider
+    )
     handler = logging.StreamHandler(capture.log)
     handler.setFormatter(JsonFormatter())
     logger = logging.getLogger("podclatch_server")
@@ -87,6 +100,7 @@ def cap(monkeypatch) -> Capture:
     old_level = access.level
     access.setLevel(logging.INFO)
     yield capture
+    telemetry._detach_log_handler()
     access.setLevel(old_level)
     access.removeHandler(handler)
     logger.removeHandler(handler)
@@ -338,6 +352,9 @@ def test_no_secret_reaches_any_span_metric_or_log_line(cap, app, client, fetcher
     ]
     for text in forbidden:
         assert text not in exported, text
+    assert any("refreshed feed" in r.body for r in cap.exported_logs())
+    for record in cap.exported_logs():
+        assert set(record.attributes) <= ALLOWED_LOG_ATTRIBUTE_KEYS
     for span in cap.finished():
         assert all(
             key not in span.attributes
@@ -349,6 +366,161 @@ def test_no_secret_reaches_any_span_metric_or_log_line(cap, app, client, fetcher
                 "http.request.header.authorization",
             )
         )
+
+
+# --- logs over OTLP (US-36d) ---------------------------------------------------------------------
+ALLOWED_LOG_ATTRIBUTE_KEYS = {"logger.name", "exception.type"}
+
+
+def exported_handlers() -> list:
+    return [
+        h
+        for name in telemetry.EXPORTED_LOGGERS
+        for h in logging.getLogger(name).handlers
+        if isinstance(h, telemetry.OtlpLogHandler)
+    ]
+
+
+@pytest.fixture
+def app_log_level():
+    logger = logging.getLogger("podclatch_server")
+    old = logger.level
+    yield
+    logger.setLevel(old)
+
+
+def test_exported_log_record_has_message_severity_and_logger_name(cap):
+    logging.getLogger("podclatch_server.x").warning("hello %s", "world")
+    (record,) = cap.exported_logs()
+    assert record.body == "hello world"
+    assert record.severity_text == "WARN" and record.severity_number.name == "WARN"
+    assert record.attributes["logger.name"] == "podclatch_server.x"
+
+
+def test_record_inside_a_request_span_has_the_same_ids_as_the_stderr_line(cap, client):
+    client.post("/v1/feeds", json={"feedUrl": URL_A})
+    cap.log.truncate(0)
+    cap.log.seek(0)
+    cap.logs.clear()
+    client.post("/v1/refresh", headers={"traceparent": TRACEPARENT})
+    stderr = [x for x in cap.lines() if x["logger"].startswith("podclatch_server")]
+    exported = [r for r in cap.exported_logs() if r.attributes["logger.name"] != ACCESS_LOGGER]
+    assert stderr and len(exported) == len(stderr)
+    key = lambda x: x["message"] if isinstance(x, dict) else x.body  # noqa: E731
+    for line, record in zip(sorted(stderr, key=key), sorted(exported, key=key), strict=True):
+        assert line["message"] == record.body
+        assert format(record.trace_id, "032x") == line["trace_id"] == TRACE_ID
+        assert format(record.span_id, "016x") == line["span_id"]
+
+
+def test_record_outside_a_span_is_exported_without_ids(cap):
+    logging.getLogger("podclatch_server.x").warning("startup")
+    (record,) = cap.exported_logs()
+    assert not record.trace_id and not record.span_id
+
+
+def test_only_the_app_and_access_loggers_are_exported(cap):
+    logging.getLogger("podclatch_server.deep.x").warning("app")
+    logging.getLogger(ACCESS_LOGGER).info("access")
+    logging.getLogger("opentelemetry.sdk.x").warning("sdk")
+    logging.getLogger("httpx").warning("lib")
+    logging.getLogger().warning("root")
+    assert [r.body for r in cap.exported_logs()] == ["app", "access"]
+
+
+def test_log_level_follows_log_level_setting(cap, app_log_level):
+    create_app(Settings(token=TOKEN, test_mode=True, log_level="WARNING"))
+    log = logging.getLogger("podclatch_server.x")
+    log.info("quiet")
+    log.warning("loud")
+    assert [r.body for r in cap.exported_logs()] == ["loud"]
+    assert [x["message"] for x in cap.lines()] == ["loud"]
+    cap.logs.clear()
+    create_app(Settings(token=TOKEN, test_mode=True, log_level="DEBUG"))
+    log.debug("detail")
+    (record,) = cap.exported_logs()
+    assert record.body == "detail" and record.severity_text == "DEBUG"
+
+
+def test_access_record_is_exported_without_the_query_string(cap, app):
+    logging.getLogger(ACCESS_LOGGER).info(
+        '%s - "%s %s HTTP/%s" %d', "c:1", "GET", "/v1/search?q=SECRET123", "1.1", 200
+    )
+    (record,) = cap.exported_logs()
+    assert "/v1/search" in record.body and "SECRET123" not in record.body
+
+
+def test_exception_text_is_not_exported(cap):
+    try:
+        raise ValueError(f"DETAIL: Key (feed_url)=({SECRET_URL}) already exists")
+    except ValueError:
+        logging.getLogger("podclatch_server.x").exception("boom")
+    (record,) = cap.exported_logs()
+    assert record.attributes["exception.type"] == "ValueError"
+    assert "exception.message" not in record.attributes
+    assert "exception.stacktrace" not in record.attributes
+    assert "SECRET123" not in cap.everything_exported()
+
+
+def test_args_and_extra_are_not_exported_as_attributes(cap):
+    logging.getLogger("podclatch_server.x").warning("a %s", "b", extra={"token": "EXTRASECRET"})
+    (record,) = cap.exported_logs()
+    assert set(record.attributes) <= ALLOWED_LOG_ATTRIBUTE_KEYS
+    assert set(telemetry.LOG_ATTRIBUTE_KEYS) == ALLOWED_LOG_ATTRIBUTE_KEYS
+    assert "EXTRASECRET" not in cap.everything_exported()
+
+
+def test_configure_with_endpoint_exports_to_v1_logs_and_shutdown_flushes(
+    monkeypatch, app_log_level
+):
+    logging.getLogger("podclatch_server").setLevel(logging.INFO)
+    for name in STATE_FIELDS:
+        monkeypatch.setattr(telemetry._state, name, None)
+    memory = InMemoryLogRecordExporter()
+    made = {}
+
+    def fake_exporter(**kwargs):
+        made.update(kwargs)
+        return memory
+
+    monkeypatch.setattr(telemetry, "OTLPLogExporter", fake_exporter)
+    try:
+        telemetry.configure("svc", "http://collector:4318/")
+        assert made == {"endpoint": "http://collector:4318/v1/logs", "timeout": 5}
+        telemetry.configure("svc", "http://collector:4318/")  # second call keeps the first
+        assert len(exported_handlers()) == 2  # one per exported logger, not four
+        logging.getLogger("podclatch_server.x").warning("buffered")
+        assert memory.get_finished_logs() == ()  # batched, not yet sent
+        resource = telemetry._state.logger_provider.resource
+        assert resource.attributes["service.name"] == "svc"
+    finally:
+        telemetry.shutdown()
+    assert exported_handlers() == []
+    bodies = [r.log_record.body for r in memory.get_finished_logs()]
+    assert bodies.count("buffered") == 1 and "telemetry export enabled" in bodies
+
+
+def test_install_twice_exports_a_record_once(cap):
+    other = InMemoryLogRecordExporter()
+    provider = LoggerProvider()
+    provider.add_log_record_processor(SimpleLogRecordProcessor(other))
+    telemetry.install(telemetry._state.tracer_provider, telemetry._state.meter_provider, provider)
+    logging.getLogger("podclatch_server.x").warning("once")
+    assert len(exported_handlers()) == 2
+    assert len(other.get_finished_logs()) == 1 and cap.exported_logs() == []
+
+
+def test_no_endpoint_adds_no_log_handler_or_exporter(monkeypatch):
+    for name in STATE_FIELDS:
+        monkeypatch.setattr(telemetry._state, name, None)
+    before = {n: list(logging.getLogger(n).handlers) for n in telemetry.EXPORTED_LOGGERS}
+    telemetry.configure("svc", None)
+    try:
+        assert telemetry._state.logger_provider is None and telemetry._state.log_handler is None
+        after = {n: list(logging.getLogger(n).handlers) for n in telemetry.EXPORTED_LOGGERS}
+        assert after == before
+    finally:
+        telemetry.shutdown()
 
 
 # --- configuration -------------------------------------------------------------------------------
