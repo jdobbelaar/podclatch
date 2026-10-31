@@ -31,3 +31,7 @@ services:
       REFRESH_INTERVAL_HOURS: "24"
       # Search calls the fake host instead of the real iTunes (only this overlay sets it).
       ITUNES_SEARCH_URL: http://feedhost:8080/search
+
+  # The test stacks do not publish Grafana, so they never collide with the dev stack's port.
+  lgtm:
+    ports: !reset []

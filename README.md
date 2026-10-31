@@ -196,7 +196,7 @@ This starts the server and its Postgres together. Run these from the repository 
 
 1. `cp .env.example .env` (on PowerShell: `Copy-Item .env.example .env`).
 2. Edit `.env` and set `PODCLATCH_TOKEN` (the access token the app presents) and `POSTGRES_PASSWORD`. Both are empty in the example on purpose, and the stack refuses to start while either is empty. The password is placed inside the database URL, so use only letters, digits, `-`, and `_`; percent-encode any other character. `.env` is git-ignored; never commit it.
-3. `make up` builds the image, starts both services, and returns once both are healthy.
+3. `make up` builds the image, starts the server, Postgres, and the Grafana stack, and returns once all are healthy.
 4. Check it (use your token; replace 8180 if you set `PODCLATCH_PORT`):
    - `curl -i http://localhost:8180/healthz` returns 200 and `{"status":"ok"}`.
    - `curl -i -H "Authorization: Bearer <your token>" http://localhost:8180/v1/feeds` returns 200 and `[]` on a fresh volume.
@@ -206,15 +206,23 @@ This starts the server and its Postgres together. Run these from the repository 
 
 | Target | Raw command | What it does |
 | --- | --- | --- |
-| `make up` | `docker compose up -d --build --wait` | Build, start, and wait until both services are healthy |
-| `make down` | `docker compose down` | Remove the containers and network; the Postgres data is kept |
-| `make logs` | `docker compose logs -f server postgres` | Follow the logs |
+| `make up` | `docker compose up -d --build --wait` | Build, start, and wait until all services (server, Postgres, and the Grafana stack) are healthy |
+| `make down` | `docker compose down` | Remove the containers and network; the Postgres data and the telemetry data are kept |
+| `make logs` | `docker compose logs -f server postgres` | Follow the server and Postgres logs |
 | `make test` | `docker compose -f docker-compose.test.yaml run --rm --build test` | Run the server tests in a container |
 | `make test-integration` | `uv run --directory server pytest tests_integration` | Run the end-to-end tests against a throwaway stack (server, Postgres, and a fake feed host) |
 | `make test-e2e` | `python3 -I android/tools/e2e.py` | Run the real Android app on an attached emulator against its own throwaway stack (project `podclatch-e2e`, port 18180) |
-| `make clean` | `docker compose down -v --remove-orphans` | Also delete the Postgres volume: **this erases all data** |
+| `make clean` | `docker compose down -v --remove-orphans` | Also delete the Postgres volume (**this erases all data**) and the telemetry volume |
 
-**Ports.** The server listens on `127.0.0.1:8180` by default. It is not 8000 because other local projects commonly use 8000 (and 3000, 9090, 5432, and 5433, which this setup also avoids). Set `PODCLATCH_PORT` in `.env` to change it. It is bound to loopback only; to reach it from a phone on your LAN, set `PODCLATCH_BIND_ADDRESS=0.0.0.0` (anyone on the network can then reach the token-protected API, so only do this on a network you trust). Postgres is not published to the host by default. To open it for debugging, add the override file, which publishes it on `127.0.0.1:5442` (change with `PODCLATCH_POSTGRES_PORT`): `docker compose -f docker-compose.yaml -f docker-compose.debug.yaml up -d`, then `psql -h localhost -p 5442 -U podclatch podclatch`.
+**Ports.** The server listens on `127.0.0.1:8180` by default. It is not 8000 because other local projects commonly use 8000 (and 3000, 9090, 5432, and 5433, which this setup also avoids). Set `PODCLATCH_PORT` in `.env` to change it. It is bound to loopback only; to reach it from a phone on your LAN, set `PODCLATCH_BIND_ADDRESS=0.0.0.0` (anyone on the network can then reach the token-protected API, so only do this on a network you trust). Grafana is published on `127.0.0.1:3180` (change with `PODCLATCH_GRAFANA_PORT`; not 3000, for the same reason). Its bind address is intentionally not configurable: Grafana runs with anonymous admin access, so keep it on loopback. Postgres is not published to the host by default. To open it for debugging, add the override file, which publishes it on `127.0.0.1:5442` (change with `PODCLATCH_POSTGRES_PORT`): `docker compose -f docker-compose.yaml -f docker-compose.debug.yaml up -d`, then `psql -h localhost -p 5442 -U podclatch podclatch`.
+
+**Telemetry.** `make up` also starts `lgtm` (the pinned `grafana/otel-lgtm` image: an OpenTelemetry Collector with Tempo, Loki, Prometheus, and Grafana). The server sends its traces and metrics to it over OTLP/HTTP on the Compose network; the OTLP ports are not published to the host, and nothing leaves your machine. Open Grafana at <http://localhost:3180> (no login). Data is exported about every 15 s, so wait about 30 s after a request.
+
+- **Traces:** Explore, data source Tempo, search by service `podclatch-server`. A `POST /v1/refresh` request shows up as a trace whose root span is named `POST /v1/refresh`. `/healthz` is not traced.
+- **Metrics:** Explore, data source Prometheus. Search for `podclatch_http_server_requests_total` (the request counter) and `podclatch_http_server_duration_seconds_bucket` (the latency histogram). The server names them `podclatch.http.server.requests` and `podclatch.http.server.duration`; Prometheus turns the dots into underscores and adds the suffixes.
+- **Logs:** the server writes JSON logs to stderr (with `trace_id` and `span_id` while a span is active). Read them with `make logs` and match a `trace_id` against the trace in Tempo. They are **not** in Loki yet; exporting them is tracked in [#107](https://github.com/jdobbelaar/podclatch/issues/107).
+- **Storage:** data lives in the named volume `podclatch-lgtm-data` and is disposable. `make down` keeps it, `make clean` deletes it.
+- **Optional:** the server does not wait for `lgtm`, so `docker compose stop lgtm` leaves the API working. The test stacks (`make test-integration`, `make test-e2e`) do not publish Grafana, so they never collide with this port.
 
 **Search directory.** `GET /v1/search` calls the iTunes directory at `https://itunes.apple.com/search`. The optional variable `ITUNES_SEARCH_URL` (must start with `http://` or `https://`) points it somewhere else; the integration tests use it to reach a fake host. Normal use does not set it, and `docker-compose.yaml` does not pass it through, so `make up` calls the real iTunes.
 

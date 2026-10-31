@@ -32,8 +32,31 @@ services:
       PODCLATCH_TOKEN: ${PODCLATCH_TOKEN:?PODCLATCH_TOKEN is not set - copy .env.example to .env and set it}
       REFRESH_INTERVAL_HOURS: ${REFRESH_INTERVAL_HOURS:-3}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Traces and metrics go to the lgtm service below (a base URL; the server adds /v1/traces and
+      # /v1/metrics). No depends_on: a slow or failed lgtm never blocks the server.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-podclatch-server}
     ports:
       - "${PODCLATCH_BIND_ADDRESS:-127.0.0.1}:${PODCLATCH_PORT:-8180}:8000"
 
+  # Local telemetry backend (OpenTelemetry Collector, Tempo, Loki, Prometheus, Grafana in one image).
+  # Grafana is anonymous-admin, so it is published on loopback only and is deliberately not tied to
+  # PODCLATCH_BIND_ADDRESS. The OTLP ports (4317, 4318) are not published; the server reaches them
+  # over the Compose network.
+  lgtm:
+    image: grafana/otel-lgtm:0.38.1
+    restart: unless-stopped
+    volumes:
+      - podclatch-lgtm-data:/data
+    ports:
+      - "127.0.0.1:${PODCLATCH_GRAFANA_PORT:-3180}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
 volumes:
   podclatch-pgdata:
+  podclatch-lgtm-data:
