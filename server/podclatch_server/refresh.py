@@ -5,6 +5,7 @@ successful fetch is applied with one `Store.apply_refresh` call. Feed URLs can c
 (spec decision #27), so logs and `error` texts use Feed ids and exception type names only.
 """
 
+import contextvars
 import logging
 import threading
 import time
@@ -12,6 +13,9 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
+from opentelemetry.trace import SpanKind, Status, StatusCode
+
+from podclatch_server import telemetry
 from podclatch_server.feeds import FeedError
 from podclatch_server.routes.feeds import Fetcher
 from podclatch_server.store import Feed, Store
@@ -62,6 +66,28 @@ class _Run:
         self.results: dict[int, dict[str, Any]] = {}
 
 
+def _fetch_in_span(fetch: Fetcher, feed: Feed):
+    """Fetch one Feed inside a client span (the outbound call to the feed host).
+
+    The span records the Feed id only: never the URL, its query string, or its userinfo
+    (decision #27), and never the exception message. A failure marks the span with the exception
+    type name.
+    """
+    with telemetry.get_tracer().start_as_current_span(
+        "fetch feed",
+        kind=SpanKind.CLIENT,
+        attributes={"feed.id": feed.id},
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        try:
+            return fetch(feed.feed_url)
+        except Exception as exc:
+            span.set_status(Status(StatusCode.ERROR))
+            span.set_attribute("error.type", type(exc).__name__)
+            raise
+
+
 def _refresh_one(
     run: _Run, store: Store, fetch: Fetcher, feed_id: int, clock: Callable[[], int]
 ) -> None:
@@ -70,7 +96,7 @@ def _refresh_one(
         result = _failure(feed_id, UNSUBSCRIBED_ERROR)
     else:
         try:
-            parsed = fetch(feed.feed_url)  # no store lock held
+            parsed = _fetch_in_span(fetch, feed)  # no store lock held
         except FeedError as exc:
             logger.info("refresh of feed %d failed: %s", feed_id, type(exc).__name__)
             result = _failure(feed_id, _error_text(exc, feed.feed_url))
@@ -140,14 +166,31 @@ def refresh_feeds(
     it the run happens inline. If `should_stop` turns true, the Feeds not yet started are left
     out of the returned results.
     """
+    with telemetry.get_tracer().start_as_current_span(
+        "refresh", attributes={"refresh.feed_count": len(feeds)}
+    ):
+        results = _refresh_feeds(store, fetch, feeds, cap_seconds, clock, should_stop)
+        telemetry.record_refresh(results)
+        return results
+
+
+def _refresh_feeds(
+    store: Store,
+    fetch: Fetcher,
+    feeds: list[Feed],
+    cap_seconds: float | None,
+    clock: Callable[[], int],
+    should_stop: Callable[[], bool],
+) -> list[dict[str, Any]]:
     feed_ids = [f.id for f in feeds]
     run = _Run()
     if cap_seconds is None:
         _work(run, store, fetch, feed_ids, clock, should_stop)
         return [run.results[i] for i in feed_ids if i in run.results]
     worker = threading.Thread(
-        target=_work,
-        args=(run, store, fetch, feed_ids, clock, should_stop),
+        # The worker runs in a copy of this context, so its spans and logs join the trace.
+        target=contextvars.copy_context().run,
+        args=(_work, run, store, fetch, feed_ids, clock, should_stop),
         name="manual-refresh",
         daemon=True,
     )

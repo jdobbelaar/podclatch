@@ -3,6 +3,7 @@
 import contextlib
 import functools
 import io
+import json
 import logging
 
 import pytest
@@ -75,10 +76,13 @@ def test_log_level_decides_which_records_are_emitted(capsys, level, emitted):
 
 
 @bare
-def test_output_uses_uvicorn_format(capsys):
+def test_output_is_one_json_object_per_line(capsys):
     build()
     logging.getLogger("podclatch_server.x").warning("hello")
-    assert capsys.readouterr().err.strip() == "WARNING:  hello"
+    (line,) = capsys.readouterr().err.splitlines()
+    entry = json.loads(line)
+    assert entry["message"] == "hello" and entry["level"] == "WARNING"
+    assert entry["logger"] == "podclatch_server.x" and entry["timestamp"]
 
 
 @bare

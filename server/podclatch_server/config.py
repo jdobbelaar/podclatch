@@ -11,6 +11,7 @@ DEFAULT_DATABASE_URL = "sqlite:///./podclatch.db"
 DEFAULT_REFRESH_INTERVAL_HOURS = 3.0
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
+DEFAULT_SERVICE_NAME = "podclatch-server"
 LOG_LEVELS = ("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG")
 TRUE_VALUES = ("1", "true", "yes", "on")
 FALSE_VALUES = ("", "0", "false", "no", "off")
@@ -28,6 +29,9 @@ class Settings:
     log_level: str = DEFAULT_LOG_LEVEL
     test_mode: bool = False
     itunes_search_url: str = field(default=DEFAULT_ITUNES_SEARCH_URL, repr=False)
+    # Telemetry (standard OpenTelemetry variables). No endpoint means nothing is exported.
+    otel_endpoint: str | None = None
+    otel_service_name: str = DEFAULT_SERVICE_NAME
 
     def __post_init__(self) -> None:
         if not self.database_url:
@@ -41,6 +45,10 @@ class Settings:
             raise ConfigError(f"LOG_LEVEL must be one of {', '.join(LOG_LEVELS)}")
         if not self.itunes_search_url.startswith(("http://", "https://")):
             raise ConfigError("ITUNES_SEARCH_URL must start with http:// or https://")
+        if self.otel_endpoint and not self.otel_endpoint.startswith(("http://", "https://")):
+            raise ConfigError("OTEL_EXPORTER_OTLP_ENDPOINT must start with http:// or https://")
+        if not self.otel_service_name:
+            raise ConfigError("OTEL_SERVICE_NAME must not be empty")
         if not self.test_mode and not self.token:
             raise ConfigError("PODCLATCH_TOKEN must be set (it is required outside test mode)")
 
@@ -78,4 +86,6 @@ def load_settings(env: Mapping[str, str] | None = None, test_mode: bool | None =
         log_level=source.get("LOG_LEVEL", DEFAULT_LOG_LEVEL).upper(),
         test_mode=test_mode,
         itunes_search_url=source.get("ITUNES_SEARCH_URL", "").strip() or DEFAULT_ITUNES_SEARCH_URL,
+        otel_endpoint=source.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip() or None,
+        otel_service_name=source.get("OTEL_SERVICE_NAME", "").strip() or DEFAULT_SERVICE_NAME,
     )
