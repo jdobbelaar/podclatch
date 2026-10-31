@@ -9,6 +9,7 @@ import com.podclatch.data.network.ApiError
 import com.podclatch.data.network.ApiException
 import com.podclatch.data.network.PodClatchApi
 import com.podclatch.data.network.RefreshResultDto
+import com.podclatch.data.network.withTrace
 import com.podclatch.domain.SyncEngine
 import com.podclatch.domain.SyncResult
 import com.podclatch.domain.SyncTrigger
@@ -109,15 +110,15 @@ class FeedsRepository @Inject constructor(
      * its result says it failed). If the call itself fails, no Sync runs, except after a 404 so the Feed
      * leaves the cache.
      */
-    suspend fun refreshFeed(feedId: Long): FeedsResult<RefreshOutcome> {
+    suspend fun refreshFeed(feedId: Long): FeedsResult<RefreshOutcome> = withTrace {
         val results = when (val r = call { api.refreshFeed(feedId) }) {
             is FeedsResult.Ok -> r.value
             is FeedsResult.Failed -> {
                 if (r.isNotFound()) engine.sync(SyncTrigger.MANUAL)
-                return r
+                return@withTrace r
             }
         }
-        return FeedsResult.Ok(RefreshOutcome(results, engine.sync(SyncTrigger.MANUAL)))
+        FeedsResult.Ok(RefreshOutcome(results, engine.sync(SyncTrigger.MANUAL)))
     }
 
     private fun FeedsResult.Failed.isNotFound() = (error as? ApiError.Http)?.code == 404
@@ -126,12 +127,12 @@ class FeedsRepository @Inject constructor(
      * Refreshes every Feed on the server, then always syncs (some Feeds may have new Episodes even if
      * others failed). If the call itself fails, no Sync runs.
      */
-    suspend fun refreshAll(): FeedsResult<RefreshOutcome> {
+    suspend fun refreshAll(): FeedsResult<RefreshOutcome> = withTrace {
         val results = when (val r = call { api.refreshAllFeeds() }) {
             is FeedsResult.Ok -> r.value
-            is FeedsResult.Failed -> return r
+            is FeedsResult.Failed -> return@withTrace r
         }
-        return FeedsResult.Ok(RefreshOutcome(results, engine.sync(SyncTrigger.MANUAL)))
+        FeedsResult.Ok(RefreshOutcome(results, engine.sync(SyncTrigger.MANUAL)))
     }
 
     private suspend fun <T> call(block: suspend () -> T): FeedsResult<T> = try {

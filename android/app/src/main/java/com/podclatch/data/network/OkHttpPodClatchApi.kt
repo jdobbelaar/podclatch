@@ -23,6 +23,7 @@ import java.io.InterruptedIOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -36,7 +37,15 @@ class OkHttpPodClatchApi @Inject constructor(
     private val client: OkHttpClient,
     private val json: Json,
     private val settings: SettingsRepository,
+    spans: SpanRecorder = SpanRecorder(),
 ) : PodClatchApi {
+
+    /**
+     * The `traceparent` interceptor is attached here, to this class's own client only. The shared
+     * `OkHttpClient` is the base of the audio, download, and artwork clients, which talk to podcast
+     * publishers and must never receive the header.
+     */
+    private val apiClient: OkHttpClient = client.newBuilder().addInterceptor(TraceparentInterceptor(spans)).build()
 
     override suspend fun health(target: ServerTarget?) {
         val resolved = resolve(target)
@@ -142,13 +151,14 @@ class OkHttpPodClatchApi @Inject constructor(
             settings.current().let { it.serverUrl to it.authToken }
         }
         val callClient = target?.callTimeoutSeconds?.let {
-            client.newBuilder().callTimeout(it, TimeUnit.SECONDS).build()
-        } ?: client
+            apiClient.newBuilder().callTimeout(it, TimeUnit.SECONDS).build()
+        } ?: apiClient
         return Resolved(baseUrl.trimEnd('/'), token, callClient)
     }
 
     private suspend fun execute(resolved: Resolved, builder: Request.Builder, authenticated: Boolean): String {
         if (authenticated) builder.header("Authorization", "Bearer ${resolved.token}")
+        coroutineContext[TraceContext]?.let { builder.tag(TraceContext::class.java, it) }
         val call = resolved.client.newCall(builder.build())
         val (code, text) = try {
             call.await()

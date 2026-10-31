@@ -16,6 +16,7 @@ import com.podclatch.data.network.PodClatchApi
 import com.podclatch.data.network.StateOutcome
 import com.podclatch.data.network.SyncPageDto
 import com.podclatch.data.network.TombstoneEntityType
+import com.podclatch.data.network.withTrace
 import com.podclatch.data.repo.SettingsRepository
 import com.podclatch.download.PartialDownloadCleaner
 import kotlinx.coroutines.CancellationException
@@ -93,7 +94,9 @@ class SyncEngine(
      * MANUAL waits for the run to finish and then performs its own full run, so the caller is guaranteed
      * a pull that started after the call; manual calls made during that wait share one run (and result).
      */
-    suspend fun sync(trigger: SyncTrigger): SyncResult {
+    suspend fun sync(trigger: SyncTrigger): SyncResult = withTrace { syncInTrace(trigger) }
+
+    private suspend fun syncInTrace(trigger: SyncTrigger): SyncResult {
         if (mutex.tryLock()) {
             try {
                 return runLocked(trigger)
