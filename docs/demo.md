@@ -72,10 +72,10 @@ Before step 1, three of the four Feeds (Tiny Science, Bike Shop Banter, and The 
 
 ### 9. The Queue
 
-![The Queue: the playing Episode highlighted, a second Episode downloading, and the rest of the queued Episodes.](screenshots/queue.png)
+![The Queue: the playing Episode highlighted, a later Episode downloading, and the rest of the queued Episodes.](screenshots/queue.png)
 
 **You:** open the **Queue** tab.
-**The system:** the Queue is worked out, not stored: the New Episodes that are downloaded or downloading, in Feed Priority order and then each Feed's Listen Order. The playing Episode is highlighted, and the bar under the next one is its download in progress (this demo throttles that Feed's audio so you can see it).
+**The system:** the Queue is worked out, not stored: the New Episodes that are downloaded or downloading, in Feed Priority order and then each Feed's Listen Order. The playing Episode is highlighted, and the bar under the third one is its download in progress (this demo throttles that Feed's audio so you can see it).
 
 ### 10. Mark an Episode Played
 
