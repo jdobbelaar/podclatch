@@ -28,7 +28,7 @@ Lifecycle
 3. Engineer implements it on a branch and opens a pull request that says `Closes #n`
 4. QA verifies it, and checks that CI is green on the pull request
 5. On FAIL, back to step 3 with the QA comment as input. After 3 FAILs on the same issue, stop and ask the human
-6. On PASS, the orchestrator merges the pull request and closes the issue, unless the QA comment lists manual checks (see Human checkpoints)
+6. On PASS, the orchestrator merges the pull request itself, without waiting for the human (standing instruction from the human, 2026-10-31). Merge with `gh pr merge <n> --squash --delete-branch` once CI is green. If the QA comment lists manual checks, still merge, but then reopen the issue (the `Closes #n` line closes it on merge) and leave it open with a comment listing the pending checks, until the human confirms them (see Human checkpoints). If there are no manual checks, the issue closes with the merge
 7. Repeat until the milestone has no open issues, then stop and report to the human: what closed, what is waiting on a manual check, and anything blocked
 
 Work one milestone at a time. Do not start the next milestone until the human says to.
@@ -61,5 +61,6 @@ Rules
 - Do not skip step 2
 - The engineer does not close the issue
 - QA does not fix the code, only outputs PASS or FAIL
+- The orchestrator merges a pull request as soon as QA outputs PASS and CI is green; it does not ask the human first
 - The orchestrator closes the issue only after QA outputs PASS and any manual checks are confirmed
 - Never commit directly to `main`; every change arrives through a pull request
