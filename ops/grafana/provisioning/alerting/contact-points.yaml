@@ -1,0 +1,14 @@
+# Webhook contact point: a local test receiver on the Compose network (see ops/alert-receiver/).
+# No token or secret; the URL is a container name. A real destination is tracked in issue #113.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: podclatch-webhook
+    receivers:
+      - uid: podclatch-webhook-receiver
+        type: webhook
+        settings:
+          url: http://alert-receiver:8080/
+          httpMethod: POST
+        disableResolveMessage: false

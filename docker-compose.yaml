@@ -48,6 +48,8 @@ services:
     restart: unless-stopped
     volumes:
       - podclatch-lgtm-data:/data
+      # The alert rule, webhook contact point, and notification policy (US-37), provisioned from files.
+      - ./ops/grafana/provisioning/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
     ports:
       - "127.0.0.1:${PODCLATCH_GRAFANA_PORT:-3180}:3000"
     healthcheck:
@@ -56,6 +58,24 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+
+  # Test webhook receiver for the Grafana alert (US-37): logs every POST body (docker compose logs
+  # alert-receiver) and serves the latest one at GET /last. Standard-library Python, no secret, no
+  # internet. Published on loopback only. lgtm does not depend on it, so stopping it never affects
+  # the server or `make up --wait`.
+  alert-receiver:
+    image: python:3.12-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/app/receiver.py"]
+    volumes:
+      - ./ops/alert-receiver/receiver.py:/app/receiver.py:ro
+    ports:
+      - "127.0.0.1:${PODCLATCH_ALERT_RECEIVER_PORT:-8280}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   podclatch-pgdata:

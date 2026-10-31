@@ -35,3 +35,8 @@ services:
   # The test stacks do not publish Grafana, so they never collide with the dev stack's port.
   lgtm:
     ports: !reset []
+
+  # The alert test receiver (US-37) is not part of the test stacks: a profile that is never enabled
+  # keeps it from starting, and its host port is never taken.
+  alert-receiver:
+    profiles: ["dev-only"]
