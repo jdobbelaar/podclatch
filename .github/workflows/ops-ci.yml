@@ -1,0 +1,23 @@
+name: Ops CI
+
+# Static checks of the Grafana alert provisioning files (US-37). No Docker, network, account, or secret.
+on:
+  pull_request:
+    paths:
+      - "ops/**"
+      - "docker-compose.yaml"
+      - ".github/workflows/ops-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ops/**"
+      - "docker-compose.yaml"
+      - ".github/workflows/ops-ci.yml"
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run --no-project --with pytest --with pyyaml pytest ops/tests
