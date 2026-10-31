@@ -224,6 +224,60 @@ This starts the server and its Postgres together. Run these from the repository 
 - **Storage:** data lives in the named volume `podclatch-lgtm-data` and is disposable. `make down` keeps it, `make clean` deletes it.
 - **Optional:** the server does not wait for `lgtm`, so `docker compose stop lgtm` leaves the API working. The test stacks (`make test-integration`, `make test-e2e`) do not publish Grafana, so they never collide with this port.
 
+#### Alerting
+
+`make up` also provisions an alert in Grafana, defined as code in `ops/grafana/provisioning/alerting/` (mounted read-only into `lgtm`; no clicking in the UI). It fires when the server is failing its users.
+
+- **Rule** `PodClatch Server 5xx ratio high` (Grafana, Alerting, Alert rules, folder `PodClatch`): more than **5%** of all requests, over all routes, in a **5 minute** window are answered with a 5xx (`podclatch_http_server_requests_total{http_response_status_class="5xx"}`), and this lasts **5 minutes** (`for: 5m`). The rule is evaluated every 1 minute.
+- **Not on idle traffic:** the rule also needs **at least 3 requests** in the window. One failed request on an idle server, or no requests at all, stays Normal.
+- **Labels and annotations:** `service=podclatch-server`, `severity=critical`, plus `summary` and `description` in plain words. They carry no token, feed URL, or episode title.
+- **Webhook:** the notification policy sends it to the contact point `podclatch-webhook`, a POST to `http://alert-receiver:8080/`. `alert-receiver` is a tiny test receiver in the Compose stack (`ops/alert-receiver/receiver.py`, standard-library Python, no secret, no internet). It prints each payload to its log and keeps the latest one at `GET /last`. It is published on `127.0.0.1:8280` only (change with `PODCLATCH_ALERT_RECEIVER_PORT`); the test stacks do not start it. If it is stopped, the server and `make up` are not affected. Sending the alert to a real destination outside your machine is not done yet (issue #113).
+
+**Make it fire, and clear it.** Run from the repository root, with `make up` done and your token in `.env`. The server answers 500 while Postgres is down, because it cannot reach its database.
+
+1. `docker compose stop postgres`
+2. Send an authenticated request every 15 seconds so there is traffic to count (bash; replace the port and token, and leave it running):
+   `while true; do curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer <your token>" http://localhost:8180/v1/feeds; sleep 15; done`
+   (PowerShell: `while ($true) { curl.exe -s -o NUL -w "%{http_code}`n" -H "Authorization: Bearer <your token>" http://localhost:8180/v1/feeds; Start-Sleep 15 }`.) Each request answers `500` after a few seconds.
+3. Watch Grafana, Alerting, Alert rules: the rule goes Normal, then Pending, then Firing. Expect Pending about 1 to 2 minutes after the first failure (metric export about 15 s, Prometheus scrape, then the 1 minute evaluation) and Firing about 5 minutes later, so roughly 6 to 8 minutes in total.
+4. `docker compose logs alert-receiver` (or `curl http://localhost:8280/last`) shows the webhook JSON with `"status": "firing"` shortly after the rule fires.
+5. To clear it: `docker compose start postgres`. The requests answer 200 again, the failures age out of the 5 minute window, the rule returns to Normal, and the receiver gets `"status": "resolved"`. Expect this within roughly 5 to 7 minutes. Stop the loop with Ctrl+C.
+
+**Observed (one run on a fresh stack):** first 500 at 0:00, rule Pending at about 2 minutes, Firing and the `firing` webhook at about 7 minutes, Postgres started right after, and Grafana sent the `resolved` webhook about 6 minutes after that (about 13 minutes end to end). Grafana's links use `http://localhost:3000/` (its address inside the container), so open the rule from Alerting at port 3180 instead of following them.
+
+**Example payload** (a real capture, shortened to the fields the on-call agent, #35, matches on; `alertname`, the label names, and the annotation names are a stable contract; the `resolved` payload has the same shape with `"status": "resolved"` and a real `endsAt`):
+
+```json
+{
+  "receiver": "podclatch-webhook",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PodClatch Server 5xx ratio high",
+        "grafana_folder": "PodClatch",
+        "service": "podclatch-server",
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "PodClatch Server is answering requests with server errors",
+        "description": "More than 5% of the requests to PodClatch Server were answered with a 5xx error over the last 5 minutes (at least 3 requests in that window), and this has lasted 5 minutes. Users are likely seeing failures. Check the server and Postgres logs."
+      },
+      "startsAt": "2026-10-31T22:08:40Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://localhost:3000/alerting/grafana/podclatch-5xx-ratio/view?orgId=1",
+      "ruleUID": "podclatch-5xx-ratio",
+      "values": { "A": 1, "B": 1, "C": 1 }
+    }
+  ],
+  "groupLabels": { "alertname": "PodClatch Server 5xx ratio high", "service": "podclatch-server" },
+  "externalURL": "http://localhost:3000/",
+  "title": "[FIRING:1] PodClatch Server 5xx ratio high podclatch-server (PodClatch critical)",
+  "state": "alerting"
+}
+```
+
 **Search directory.** `GET /v1/search` calls the iTunes directory at `https://itunes.apple.com/search`. The optional variable `ITUNES_SEARCH_URL` (must start with `http://` or `https://`) points it somewhere else; the integration tests use it to reach a fake host. Normal use does not set it, and `docker-compose.yaml` does not pass it through, so `make up` calls the real iTunes.
 
 **Access log.** The server drops the query string from every request line in its access log (for example `GET /v1/search?q=...` is logged as `GET /v1/search`), because feed URLs and search terms can carry secrets.

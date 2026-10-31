@@ -38,3 +38,6 @@ android/gradle/gradle-daemon-jvm.properties
 
 # Agent worktrees created by Claude Code sessions
 .claude/worktrees/
+
+# Python bytecode
+__pycache__/

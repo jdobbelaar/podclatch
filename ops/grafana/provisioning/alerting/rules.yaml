@@ -1,0 +1,70 @@
+# Alert rule for US-37: the server is failing its users. Provisioned from this file (no UI clicks).
+# Mounted read-only into the lgtm service at Grafana's provisioning/alerting directory.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: podclatch-user-impact
+    folder: PodClatch
+    interval: 1m
+    rules:
+      - uid: podclatch-5xx-ratio
+        title: PodClatch Server 5xx ratio high
+        condition: C
+        data:
+          # A: share of requests in the last 5 minutes that were answered with a 5xx, over all routes.
+          # The "and ... >= 3" part is the minimum request count: with fewer than 3 requests in the
+          # window the query returns nothing (no data), so one failure on an idle server stays Normal.
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource:
+                type: prometheus
+                uid: prometheus
+              instant: true
+              range: false
+              editorMode: code
+              expr: >-
+                (
+                  sum(increase(podclatch_http_server_requests_total{http_response_status_class="5xx"}[5m]))
+                  / sum(increase(podclatch_http_server_requests_total[5m]))
+                )
+                and
+                (sum(increase(podclatch_http_server_requests_total[5m])) >= 3)
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          # C: fires when the ratio is above 5% (0.05).
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
+        # No requests (or too few) in the window is healthy, not an alert and not an error.
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          service: podclatch-server
+          severity: critical
+        annotations:
+          summary: PodClatch Server is answering requests with server errors
+          description: >-
+            More than 5% of the requests to PodClatch Server were answered with a 5xx error over the
+            last 5 minutes (at least 3 requests in that window), and this has lasted 5 minutes. Users
+            are likely seeing failures. Check the server and Postgres logs.

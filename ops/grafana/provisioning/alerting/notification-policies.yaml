@@ -1,0 +1,11 @@
+# Route every PodClatch alert to the webhook contact point.
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: podclatch-webhook
+    group_by: [alertname, service]
+    group_wait: 10s
+    # Resolved notifications are sent at the next group interval, so keep it short for the demo.
+    group_interval: 1m
+    repeat_interval: 4h
