@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from podclatch_server import refresh
+from podclatch_server import refresh, telemetry
 from podclatch_server.feeds import ParsedFeed
 from podclatch_server.routes.feeds import Fetcher, get_fetcher
 from podclatch_server.store import Store, store_for_app
@@ -59,16 +59,20 @@ class RefreshScheduler:
             self.run_once()
 
     def run_once(self) -> None:
-        try:
-            results = refresh.refresh_feeds(
-                self._store,
-                self._fetch,
-                self._store.list_feeds(),
-                should_stop=self._stop.is_set,
-            )
-            logger.info("scheduled refresh: %s", refresh.summarize(results))
-        except Exception as exc:
-            logger.error("scheduled refresh failed: %s", type(exc).__name__)
+        # A root span, so the run's logs, child spans, and metrics share one trace_id.
+        with telemetry.get_tracer().start_as_current_span(
+            "scheduled refresh", record_exception=False, set_status_on_exception=False
+        ):
+            try:
+                results = refresh.refresh_feeds(
+                    self._store,
+                    self._fetch,
+                    self._store.list_feeds(),
+                    should_stop=self._stop.is_set,
+                )
+                logger.info("scheduled refresh: %s", refresh.summarize(results))
+            except Exception as exc:
+                logger.error("scheduled refresh failed: %s", type(exc).__name__)
 
 
 @asynccontextmanager
@@ -94,3 +98,5 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             scheduler.stop()
             logger.info("refresh scheduler stopped")
         store_for_app(app).close()  # after the scheduler has stopped
+        if settings.otel_endpoint:
+            telemetry.shutdown()  # flush what is still buffered

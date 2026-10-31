@@ -7,12 +7,18 @@ logger) gets its level set; the root logger is never touched.
 It also installs a filter on `uvicorn.access` that drops the query string from the request path in
 each access-log line (decision #27: search terms and feed URLs can be secrets). The filter lives in
 the app, so it works under plain `uvicorn` and in the Docker image alike.
+
+Records are written to stderr as one JSON object per line (`JsonFormatter`). A record emitted
+while a span is active also carries `trace_id` and `span_id`, so logs, traces, and metrics line
+up. Exception text is never written (it can echo secrets); only the exception type name is.
 """
 
+import json
 import logging
 import sys
+from datetime import UTC, datetime
 
-from uvicorn.logging import DefaultFormatter
+from opentelemetry import trace
 
 APP_LOGGER = "podclatch_server"
 ACCESS_LOGGER = "uvicorn.access"
@@ -31,6 +37,27 @@ class RedactQueryFilter(logging.Filter):
         if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
             record.args = (*args[:2], args[2].partition("?")[0], *args[3:])
         return True
+
+
+class JsonFormatter(logging.Formatter):
+    """One JSON object per record: timestamp, level, message, logger, and the active span ids."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict[str, str] = {
+            "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(
+                timespec="milliseconds"
+            ),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+        }
+        context = trace.get_current_span().get_span_context()
+        if context.is_valid:
+            entry["trace_id"] = trace.format_trace_id(context.trace_id)
+            entry["span_id"] = trace.format_span_id(context.span_id)
+        if record.exc_info and record.exc_info[0] is not None:
+            entry["exception_type"] = record.exc_info[0].__name__
+        return json.dumps(entry)
 
 
 class _StderrHandler(logging.StreamHandler):
@@ -52,17 +79,19 @@ def configure_logging(level: str) -> None:
     """Set the app logger to `level` (already validated and upper-case, see `load_settings`).
 
     If nothing is configured to receive these records (no handler on the app logger, its
-    ancestors, or the root), one stderr handler in uvicorn's format is added; calling this again
-    never adds a second one.
+    ancestors, or the root), one stderr handler with the JSON format is added; calling this again
+    never adds a second one. The handlers uvicorn put on its access logger get the JSON format too.
     """
     access = logging.getLogger(ACCESS_LOGGER)
     if not any(isinstance(f, RedactQueryFilter) for f in access.filters):
         access.addFilter(RedactQueryFilter())
+    for access_handler in access.handlers:
+        access_handler.setFormatter(JsonFormatter())
     logger = logging.getLogger(APP_LOGGER)
     logger.setLevel(getattr(logging, level))
     if any(getattr(h, _HANDLER_MARK, False) for h in logger.handlers) or logger.hasHandlers():
         return
     handler = _StderrHandler()
-    handler.setFormatter(DefaultFormatter("%(levelprefix)s %(message)s", use_colors=None))
+    handler.setFormatter(JsonFormatter())
     setattr(handler, _HANDLER_MARK, True)
     logger.addHandler(handler)
