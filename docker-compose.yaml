@@ -46,6 +46,11 @@ services:
   lgtm:
     image: grafana/otel-lgtm:0.38.1
     restart: unless-stopped
+    environment:
+      # Optional token for the GitHub dispatch contact point (issue #113). Grafana reads it as
+      # $__env{GITHUB_DISPATCH_TOKEN}; only this service gets it. Unset is fine: make up works and
+      # the dispatch contact point simply fails to authenticate when used.
+      GITHUB_DISPATCH_TOKEN: ${GITHUB_DISPATCH_TOKEN:-}
     volumes:
       - podclatch-lgtm-data:/data
       # The alert rule, webhook contact point, and notification policy (US-37), provisioned from files.

@@ -1,4 +1,6 @@
-# Route every PodClatch alert to the webhook contact point.
+# Route every PodClatch alert to BOTH the local test receiver and the GitHub dispatch contact point.
+# A child route that matches stops the walk unless continue is true, so the first route continues
+# and the second one ends it. The root receiver only catches alerts no child matches (none today).
 apiVersion: 1
 
 policies:
@@ -9,3 +11,11 @@ policies:
     # Resolved notifications are sent at the next group interval, so keep it short for the demo.
     group_interval: 1m
     repeat_interval: 4h
+    routes:
+      - receiver: podclatch-webhook
+        object_matchers:
+          - ["service", "=", "podclatch-server"]
+        continue: true
+      - receiver: podclatch-github-dispatch
+        object_matchers:
+          - ["service", "=", "podclatch-server"]

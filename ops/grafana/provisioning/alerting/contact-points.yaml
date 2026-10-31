@@ -1,5 +1,12 @@
-# Webhook contact point: a local test receiver on the Compose network (see ops/alert-receiver/).
-# No token or secret; the URL is a container name. A real destination is tracked in issue #113.
+# Webhook contact points (US-37). No secret is stored in this file.
+#
+# podclatch-webhook: a local test receiver on the Compose network (see ops/alert-receiver/).
+# podclatch-github-dispatch: the GitHub repository_dispatch API (issue #113). The token comes from
+#   the GITHUB_DISPATCH_TOKEN environment variable of the lgtm service ($__env{...}); it is never
+#   written to a file. If the variable is unset the credential is empty and GitHub answers 401.
+# podclatch-dispatch-dryrun: the same payload template sent to the local receiver instead of GitHub.
+#   It is not in the notification policy; use its Test button (or the README dry run) to see the
+#   exact body without calling GitHub.
 apiVersion: 1
 
 contactPoints:
@@ -11,4 +18,33 @@ contactPoints:
         settings:
           url: http://alert-receiver:8080/
           httpMethod: POST
+        disableResolveMessage: false
+
+  - orgId: 1
+    name: podclatch-github-dispatch
+    receivers:
+      - uid: podclatch-github-dispatch-receiver
+        type: webhook
+        settings:
+          url: https://api.github.com/repos/jdobbelaar/podclatch/dispatches
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: $__env{GITHUB_DISPATCH_TOKEN}
+          headers:
+            Accept: application/vnd.github+json
+            X-GitHub-Api-Version: "2022-11-28"
+          payload:
+            template: '{{ template "podclatch.dispatch" . }}'
+        disableResolveMessage: false
+
+  - orgId: 1
+    name: podclatch-dispatch-dryrun
+    receivers:
+      - uid: podclatch-dispatch-dryrun-receiver
+        type: webhook
+        settings:
+          url: http://alert-receiver:8080/
+          httpMethod: POST
+          payload:
+            template: '{{ template "podclatch.dispatch" . }}'
         disableResolveMessage: false
