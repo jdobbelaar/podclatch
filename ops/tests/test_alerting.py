@@ -116,6 +116,26 @@ def test_policy_routes_to_both_contact_points():
     assert "podclatch-dispatch-dryrun" not in [policy["receiver"]] + [r["receiver"] for r in routes]
 
 
+def route_receivers(labels):
+    """Receivers that would be notified for these labels (simple model of Grafana's route walk)."""
+    policy = load("notification-policies.yaml")["policies"][0]
+    notified = []
+    for route in policy["routes"]:
+        if all(labels.get(k) == v for k, op, v in route["object_matchers"] if op == "="):
+            notified.append(route["receiver"])
+            if not route.get("continue"):
+                break
+    return notified or [policy["receiver"]]
+
+
+def test_only_the_5xx_alert_is_dispatched_to_github():
+    base = {"service": "podclatch-server", "severity": "critical"}
+    five_xx = {**base, "alertname": "PodClatch Server 5xx ratio high"}
+    assert route_receivers(five_xx) == ["podclatch-webhook", "podclatch-github-dispatch"]
+    for name in ("DatasourceError", "DatasourceNoData"):
+        assert route_receivers({**base, "alertname": name}) == ["podclatch-webhook"]
+
+
 def dispatch_template():
     templates = load("templates.yaml")["templates"]
     assert [t["name"] for t in templates] == ["podclatch-dispatch"]

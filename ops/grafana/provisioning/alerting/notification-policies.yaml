@@ -16,6 +16,9 @@ policies:
         object_matchers:
           - ["service", "=", "podclatch-server"]
         continue: true
+      # Only the 5xx alert is dispatched to GitHub; DatasourceError and NoData alerts (which have a
+      # different alertname) reach only the local receiver.
       - receiver: podclatch-github-dispatch
         object_matchers:
           - ["service", "=", "podclatch-server"]
+          - ["alertname", "=", "PodClatch Server 5xx ratio high"]
