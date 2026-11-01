@@ -1,0 +1,17 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "streams",
+    "result": [
+      {
+        "stream": {"service_name": "podclatch-server", "level": "ERROR"},
+        "values": [
+          ["1793455210000000000", "ERROR unhandled exception on POST /v1/feeds trace_id=0af7651916cd43dd8448eb211c80319c"],
+          ["1793455210000000001", "Traceback (most recent call last):\n  File \"server/podclatch_server/feeds.py\", line 158, in parse_feed\n    items = _extract_xml(root)\n  File \"server/podclatch_server/feeds.py\", line 262, in _extract_xml\n    duration = _parse_duration(_text(item.find(ITUNES + 'duration')))\n  File \"server/podclatch_server/feeds.py\", line 352, in _parse_duration\n    total = total * 60 + int(part)\nValueError: Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit"],
+          ["1793455150000000000", "ERROR unhandled exception on POST /v1/feeds trace_id=1b8e2c7a4d9f4e65a3c1d0f7e6b5a492"],
+          ["1793455090000000000", "ERROR unhandled exception on POST /v1/feeds trace_id=2c9f3d8b5eaa4f76b4d2e1a8f7c6b5a3"]
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "status": "firing",
+  "alertname": "PodClatch Server 5xx ratio high",
+  "severity": "critical",
+  "service": "podclatch-server",
+  "summary": "PodClatch Server is answering requests with server errors",
+  "started_at": "2026-10-31T14:00:00Z",
+  "rule_uid": "podclatch-5xx-ratio"
+}

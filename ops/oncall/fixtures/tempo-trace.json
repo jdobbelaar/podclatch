@@ -1,0 +1,38 @@
+{
+  "batches": [
+    {
+      "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "podclatch-server"}}]},
+      "scopeSpans": [
+        {
+          "scope": {"name": "opentelemetry.instrumentation.fastapi"},
+          "spans": [
+            {
+              "traceId": "0af7651916cd43dd8448eb211c80319c",
+              "spanId": "b7ad6b7169203331",
+              "name": "POST /v1/feeds",
+              "kind": "SPAN_KIND_SERVER",
+              "startTimeUnixNano": "1793455209900000000",
+              "endTimeUnixNano": "1793455210100000000",
+              "attributes": [
+                {"key": "http.request.method", "value": {"stringValue": "POST"}},
+                {"key": "http.route", "value": {"stringValue": "/v1/feeds"}},
+                {"key": "http.response.status_code", "value": {"intValue": "500"}}
+              ],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1793455210000000000",
+                  "attributes": [
+                    {"key": "exception.type", "value": {"stringValue": "ValueError"}},
+                    {"key": "exception.message", "value": {"stringValue": "Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits"}}
+                  ]
+                }
+              ],
+              "status": {"code": "STATUS_CODE_ERROR"}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

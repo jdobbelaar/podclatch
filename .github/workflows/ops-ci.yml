@@ -8,7 +8,7 @@ on:
       - "docker-compose.yaml"
       - ".env.example"
       - ".github/workflows/ops-ci.yml"
-      - ".github/workflows/alert-dispatch.yml"
+      - ".github/workflows/oncall.yml"
   push:
     branches: [main]
     paths:
@@ -16,7 +16,7 @@ on:
       - "docker-compose.yaml"
       - ".env.example"
       - ".github/workflows/ops-ci.yml"
-      - ".github/workflows/alert-dispatch.yml"
+      - ".github/workflows/oncall.yml"
 
 jobs:
   static:

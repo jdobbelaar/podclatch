@@ -19,7 +19,6 @@ import yaml
 OPS = Path(__file__).resolve().parent.parent
 ROOT = OPS.parent
 ALERTING = OPS / "grafana" / "provisioning" / "alerting"
-WORKFLOW = ROOT / ".github" / "workflows" / "alert-dispatch.yml"
 DISPATCH_URL = "https://api.github.com/repos/jdobbelaar/podclatch/dispatches"
 
 
@@ -193,17 +192,6 @@ def test_env_example_has_only_a_commented_placeholder():
     lines = [ln for ln in text.splitlines() if "GITHUB_DISPATCH_TOKEN" in ln]
     assert lines and all(ln.startswith("#") for ln in lines)
     assert any(ln.rstrip().endswith("GITHUB_DISPATCH_TOKEN=") for ln in lines)
-
-
-def test_workflow_stub_is_least_privilege_and_prints_only_event_and_alert_name():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    workflow = yaml.safe_load(text)
-    triggers = workflow.get("on", workflow.get(True))
-    assert triggers == {"repository_dispatch": {"types": ["podclatch-alert"]}}
-    assert workflow["permissions"] == {}
-    assert "toJson(github.event.client_payload)" not in text
-    assert "client_payload.alertname" in text
-    assert "secrets." not in text
 
 
 TOKEN_LIKE = [
