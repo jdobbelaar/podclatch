@@ -169,6 +169,77 @@ def test_unset_token_fails_closed_without_calling_upstream(gw, monkeypatch):
         server.shutdown()
 
 
+@pytest.fixture
+def local_gateway(gw, monkeypatch):
+    import threading
+
+    monkeypatch.setenv("TELEMETRY_GATEWAY_TOKEN", FAKE_TOKEN)
+    monkeypatch.setattr(gw, "UPSTREAM_HOST", "127.0.0.1")
+    server = gw.ThreadingHTTPServer(("127.0.0.1", 0), gw.Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server.server_address[1]
+    server.shutdown()
+
+
+def raw_exchange(port, request_bytes, wait=10):
+    import socket
+
+    with socket.create_connection(("127.0.0.1", port), timeout=wait) as s:
+        s.sendall(request_bytes)
+        data = b""
+        try:
+            while chunk := s.recv(4096):
+                data += chunk
+        except (TimeoutError, ConnectionError):
+            pass
+    return data
+
+
+@pytest.mark.parametrize(
+    "query",
+    [b"query=a\x01b", b"query=a\x7fb", "query=café".encode("latin-1"), b"query=a b"],
+    ids=["0x01", "0x7f", "non-ascii", "space"],
+)
+def test_bad_query_string_gets_400_and_leaves_no_trace_in_the_log(local_gateway, capfd, query):
+    req = b"GET /prom/api/v1/query?" + query + b" HTTP/1.1\r\nAuthorization: Bearer " + FAKE_TOKEN.encode()
+    req += b"\r\nConnection: close\r\n\r\n"
+    reply = raw_exchange(local_gateway, req)
+    assert reply.startswith(b"HTTP/1.") and b" 400 " in reply.split(b"\r\n", 1)[0]
+    time.sleep(0.2)
+    logged = capfd.readouterr().err
+    assert "Traceback" not in logged
+    assert "query=" not in logged and "caf" not in logged
+
+
+def test_unexpected_upstream_exception_is_swallowed_without_traceback(gw, local_gateway, capfd, monkeypatch):
+    def boom(self, *a, **k):
+        raise ValueError("secret-query-text")
+
+    monkeypatch.setattr(gw.http.client.HTTPConnection, "request", boom)
+    req = b"GET /prom/api/v1/query?query=up HTTP/1.1\r\nAuthorization: Bearer " + FAKE_TOKEN.encode()
+    reply = raw_exchange(local_gateway, req + b"\r\nConnection: close\r\n\r\n")
+    assert b" 502 " in reply.split(b"\r\n", 1)[0]
+    time.sleep(0.2)
+    logged = capfd.readouterr().err
+    assert "Traceback" not in logged and "secret-query-text" not in logged
+
+
+def test_dot_segment_label_names_are_not_allowed(gw):
+    for bad in ("..", ".", ".hidden", "..%2f"):
+        assert not gw.is_allowed(f"/loki/loki/api/v1/label/{bad}/values"), bad
+    assert gw.is_allowed("/loki/loki/api/v1/label/service_name/values")
+    assert gw.is_allowed("/loki/loki/api/v1/label/a.b/values")
+
+
+def test_silent_client_is_disconnected_after_the_read_timeout(gw, local_gateway):
+    assert 0 < gw.Handler.timeout <= 10
+    started = time.monotonic()
+    # An incomplete request line: the server must give up and close instead of waiting forever.
+    data = raw_exchange(local_gateway, b"GET /prom/api/v1/qu", wait=gw.Handler.timeout + 10)
+    assert time.monotonic() - started < gw.Handler.timeout + 5
+    assert b" 200 " not in data
+
+
 # ---------- live (throwaway Compose project) ----------
 
 DOCKER_OK = shutil.which("docker") is not None and (

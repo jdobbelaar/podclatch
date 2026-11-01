@@ -37,11 +37,16 @@ BACKENDS = {"loki": 3100, "tempo": 3200, "prom": 9090}
 # Matched against the raw request path (query string removed), nothing else.
 ALLOWED = [
     re.compile(r"/loki/loki/api/v1/(query|query_range|labels)"),
-    re.compile(r"/loki/loki/api/v1/label/[A-Za-z0-9_.:-]+/values"),
+    # The name may contain dots but not start with one, so `.` and `..` segments cannot match.
+    re.compile(r"/loki/loki/api/v1/label/[A-Za-z0-9_:-][A-Za-z0-9_.:-]*/values"),
     re.compile(r"/tempo/api/traces/[0-9a-fA-F]{1,32}"),
     re.compile(r"/tempo/api/search"),
     re.compile(r"/prom/api/v1/(query|query_range)"),
 ]
+
+
+# Query strings must be printable ASCII without spaces (everything else must be percent-encoded).
+QUERY_OK = re.compile(r"[\x21-\x7e]*")
 
 
 def is_allowed(path):
@@ -57,6 +62,7 @@ def token_ok(header, token):
 class Handler(BaseHTTPRequestHandler):
     server_version = "telemetry-gateway"
     protocol_version = "HTTP/1.1"
+    timeout = 5  # seconds a client socket may stay silent (slowloris); the connection is then closed
 
     def log_message(self, fmt, *args):  # the default format can include the query string
         pass
@@ -85,6 +91,8 @@ class Handler(BaseHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         if not is_allowed(path):
             return self.reply(403, b"path not allowed\n", head_only=head)
+        if not QUERY_OK.fullmatch(query):
+            return self.reply(400, b"bad query string\n", head_only=head)
         prefix = path.split("/", 2)[1]
         upstream_path = path[len("/" + prefix) :] + ("?" + query if query else "")
         conn = http.client.HTTPConnection(UPSTREAM_HOST, BACKENDS[prefix], timeout=UPSTREAM_TIMEOUT_SECONDS)
@@ -97,7 +105,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(resp.status, body, resp.getheader("Content-Type", "application/octet-stream"), head)
         except TimeoutError:
             self.reply(504, b"upstream timeout\n", head_only=head)
-        except OSError:
+        except (OSError, ValueError, http.client.HTTPException):
+            # Never let an exception (whose traceback could hold the query string) reach the log.
             self.reply(502, b"upstream unavailable\n", head_only=head)
         finally:
             conn.close()
