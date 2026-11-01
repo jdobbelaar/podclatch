@@ -40,3 +40,7 @@ services:
   # keeps it from starting, and its host port is never taken.
   alert-receiver:
     profiles: ["dev-only"]
+
+  # Likewise the telemetry gateway (US-38a): never started, its host port never taken.
+  telemetry-gateway:
+    profiles: ["dev-only"]

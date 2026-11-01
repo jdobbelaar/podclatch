@@ -82,6 +82,27 @@ services:
       timeout: 5s
       retries: 10
 
+  # Read-only, bearer-token gateway to Loki, Tempo, and Prometheus inside lgtm (US-38a), for the on-call
+  # agent. The only telemetry endpoint that may ever be tunnelled (never Grafana or the raw backends).
+  # Published on loopback only. TELEMETRY_GATEWAY_TOKEN comes from .env; unset is fine: make up works
+  # and the gateway refuses every request (503). Nothing depends on it, so stopping it never affects
+  # the server or `make up --wait`.
+  telemetry-gateway:
+    image: python:3.12-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/app/gateway.py"]
+    environment:
+      TELEMETRY_GATEWAY_TOKEN: ${TELEMETRY_GATEWAY_TOKEN:-}
+    volumes:
+      - ./ops/telemetry-gateway/gateway.py:/app/gateway.py:ro
+    ports:
+      - "127.0.0.1:${PODCLATCH_TELEMETRY_GATEWAY_PORT:-8380}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8080), 2)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   podclatch-pgdata:
   podclatch-lgtm-data:
