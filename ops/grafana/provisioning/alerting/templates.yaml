@@ -1,0 +1,25 @@
+# Notification template for the GitHub repository_dispatch contact point (issue #113).
+# Renders {"event_type": "podclatch-alert", "client_payload": {...}}. GitHub allows at most 10
+# top-level client_payload properties; this uses 7. The whole body is built as a dictionary and
+# serialized by data.ToJSON, so quotes and newlines cannot break the JSON. The summary has query
+# strings removed and is cut to 300 characters. The rule UID is read from the alert's generator URL
+# (.../alerting/grafana/<rule uid>/view), because the template data has no field for it. No token, header, or secret is ever rendered here.
+apiVersion: 1
+
+templates:
+  - orgId: 1
+    name: podclatch-dispatch
+    template: |
+      {{ define "podclatch.dispatch" -}}
+      {{- $start := "" -}}{{- $uid := "" -}}{{- $summary := "" -}}
+      {{- if .Alerts -}}{{- with index .Alerts 0 -}}
+      {{- $start = .StartsAt.Format "2006-01-02T15:04:05Z07:00" -}}
+      {{- if match "/alerting/grafana/[A-Za-z0-9_-]+/view" .GeneratorURL -}}
+      {{- $uid = reReplaceAll ".*/alerting/grafana/([A-Za-z0-9_-]+)/view.*" "$1" .GeneratorURL -}}
+      {{- end -}}
+      {{- $summary = .Annotations.summary -}}
+      {{- end -}}{{- end -}}
+      {{- $summary = reReplaceAll "\\?[^\\s]*" "" $summary -}}
+      {{- $payload := coll.Dict "status" .Status "alertname" .GroupLabels.alertname "severity" .CommonLabels.severity "service" .CommonLabels.service "summary" (printf "%.300s" $summary) "started_at" $start "rule_uid" $uid -}}
+      {{- data.ToJSON (coll.Dict "event_type" "podclatch-alert" "client_payload" $payload) -}}
+      {{- end -}}

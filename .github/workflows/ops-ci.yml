@@ -6,13 +6,17 @@ on:
     paths:
       - "ops/**"
       - "docker-compose.yaml"
+      - ".env.example"
       - ".github/workflows/ops-ci.yml"
+      - ".github/workflows/alert-dispatch.yml"
   push:
     branches: [main]
     paths:
       - "ops/**"
       - "docker-compose.yaml"
+      - ".env.example"
       - ".github/workflows/ops-ci.yml"
+      - ".github/workflows/alert-dispatch.yml"
 
 jobs:
   static:

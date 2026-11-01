@@ -231,7 +231,7 @@ This starts the server and its Postgres together. Run these from the repository 
 - **Rule** `PodClatch Server 5xx ratio high` (Grafana, Alerting, Alert rules, folder `PodClatch`): more than **5%** of all requests, over all routes, in a **5 minute** window are answered with a 5xx (`podclatch_http_server_requests_total{http_response_status_class="5xx"}`), and this lasts **5 minutes** (`for: 5m`). The rule is evaluated every 1 minute.
 - **Not on idle traffic:** the rule also needs **at least 3 requests** in the window. One failed request on an idle server, or no requests at all, stays Normal.
 - **Labels and annotations:** `service=podclatch-server`, `severity=critical`, plus `summary` and `description` in plain words. They carry no token, feed URL, or episode title.
-- **Webhook:** the notification policy sends it to the contact point `podclatch-webhook`, a POST to `http://alert-receiver:8080/`. `alert-receiver` is a tiny test receiver in the Compose stack (`ops/alert-receiver/receiver.py`, standard-library Python, no secret, no internet). It prints each payload to its log and keeps the latest one at `GET /last`. It is published on `127.0.0.1:8280` only (change with `PODCLATCH_ALERT_RECEIVER_PORT`); the test stacks do not start it. If it is stopped, the server and `make up` are not affected. Sending the alert to a real destination outside your machine is not done yet (issue #113).
+- **Webhook:** the notification policy sends it to the contact point `podclatch-webhook`, a POST to `http://alert-receiver:8080/`. `alert-receiver` is a tiny test receiver in the Compose stack (`ops/alert-receiver/receiver.py`, standard-library Python, no secret, no internet). It prints each payload to its log and keeps the latest one at `GET /last`. It is published on `127.0.0.1:8280` only (change with `PODCLATCH_ALERT_RECEIVER_PORT`); the test stacks do not start it. If it is stopped, the server and `make up` are not affected. The same alert also goes to GitHub (see "Dispatch to GitHub" below).
 
 **Make it fire, and clear it.** Run from the repository root, with `make up` done and your token in `.env`. The server answers 500 while Postgres is down, because it cannot reach its database.
 
@@ -277,6 +277,49 @@ This starts the server and its Postgres together. Run these from the repository 
   "state": "alerting"
 }
 ```
+
+**Dispatch to GitHub (issue #113).** The notification policy sends every PodClatch alert to two contact points: `podclatch-webhook` (the local receiver above, unchanged) and `podclatch-github-dispatch`, which POSTs to `https://api.github.com/repos/jdobbelaar/podclatch/dispatches` (the `repository_dispatch` API) so a GitHub Actions workflow can be woken. This goes out from your machine to GitHub; GitHub never calls Grafana, so no tunnel is needed for this part.
+
+- **Only the 5xx alert is dispatched:** the dispatch route also matches `alertname = PodClatch Server 5xx ratio high`, so `DatasourceError` and `NoData` alerts reach only the local receiver.
+- **Event type:** `podclatch-alert`. The no-op workflow `.github/workflows/alert-dispatch.yml` runs on `repository_dispatch` with `types: [podclatch-alert]` and prints only the event type, alert name, and status. The on-call agent (#35) will match on the same event type. A workflow runs only once it is on `main`.
+- **Body:** `{"event_type": "podclatch-alert", "client_payload": {...}}`. `client_payload` has 7 properties (GitHub allows 10): `status` (`firing` or `resolved`), `alertname`, `severity`, `service`, `summary` (query strings removed, cut to 300 characters), `started_at`, and `rule_uid`. It is rendered by the template in `ops/grafana/provisioning/alerting/templates.yaml` and serialized as JSON, so quotes and newlines in a value cannot break it. It carries no token and no feed URL.
+- **Token:** put a fine-grained GitHub token (this repository only, Contents read and write, 30-day expiry) in your git-ignored `.env` as `GITHUB_DISPATCH_TOKEN` (see `.env.example`). `docker-compose.yaml` passes it to the `lgtm` service only, and Grafana reads it as `$__env{GITHUB_DISPATCH_TOKEN}` and sends it as `Authorization: Bearer`. The value is never in a file in the repository. Do not print it: no `cat .env`, `docker compose config`, `docker inspect`, or `env` inside `lgtm`.
+- **Unset is fine:** if `GITHUB_DISPATCH_TOKEN` is not set, `make up` still works; the dispatch contact point has an empty credential, GitHub is expected to answer 401 (expected, not verified), and Grafana logs a notification error. The local receiver still gets the alert, and the alert state is not affected. The same happens if GitHub is unreachable.
+- **Rotation:** the token expires after 30 days. Grafana stores the token (encrypted) in its own database the first time it provisions the contact point and does not refresh it from the environment on later starts, so replacing the value in `.env` and running `docker compose up -d lgtm` alone is not enough (the old token keeps being sent; removing the variable keeps it too). To rotate, replace the value in `.env`, then delete only Grafana's own database file, which is rebuilt from the provisioning files on the next start (Prometheus, Loki, and Tempo data and your Postgres data are not touched; the alert history and any silences are reset):
+
+  ```
+  docker compose stop lgtm
+  docker compose run --rm --no-deps --entrypoint rm lgtm -f /data/grafana/data/grafana.db
+  docker compose up -d lgtm
+  ```
+
+  When dispatch stops working, suspect an expired token first (HTTP 401 from GitHub is expected, not verified; visible in `docker compose logs lgtm` as a notification error on `podclatch-github-dispatch`).
+
+**Dry run (does not call GitHub).** The contact point `podclatch-dispatch-dryrun` uses the same payload template but sends to the local receiver, and is not in the notification policy. In Grafana, Alerting, Contact points, `podclatch-dispatch-dryrun`, press Test, then read the rendered body with `curl http://localhost:8280/last`. The checks in `ops/tests/test_alerting.py` do the same for hard cases (quotes, a backslash, newlines, a 2000 character summary, a query string):
+
+```
+PODCLATCH_DRYRUN_GRAFANA=http://localhost:3180 PODCLATCH_DRYRUN_RECEIVER=http://localhost:8280 \
+  uv run --no-project --with pytest --with pyyaml pytest ops/tests -k live_dry_run
+```
+
+A rendered body (token-free) looks like this; the `resolved` body has the same shape with `"status": "resolved"`:
+
+```json
+{
+  "client_payload": {
+    "alertname": "PodClatch Server 5xx ratio high",
+    "rule_uid": "podclatch-5xx-ratio",
+    "service": "podclatch-server",
+    "severity": "critical",
+    "started_at": "2026-10-31T23:16:40Z",
+    "status": "firing",
+    "summary": "PodClatch Server is answering requests with server errors"
+  },
+  "event_type": "podclatch-alert"
+}
+```
+
+**One real dispatch (manual, once, after the workflow is on `main`).** With the stack up and the token in `.env`, make the alert fire (the steps above) or press Test on `podclatch-github-dispatch` in Grafana, then look for the run: `gh run list --workflow alert-dispatch.yml`. Do not loop it.
 
 **Search directory.** `GET /v1/search` calls the iTunes directory at `https://itunes.apple.com/search`. The optional variable `ITUNES_SEARCH_URL` (must start with `http://` or `https://`) points it somewhere else; the integration tests use it to reach a fake host. Normal use does not set it, and `docker-compose.yaml` does not pass it through, so `make up` calls the real iTunes.
 
