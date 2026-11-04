@@ -224,6 +224,25 @@ This starts the server and its Postgres together. Run these from the repository 
 - **Storage:** data lives in the named volume `podclatch-lgtm-data` and is disposable. `make down` keeps it, `make clean` deletes it.
 - **Optional:** the server does not wait for `lgtm`, so `docker compose stop lgtm` leaves the API working. The test stacks (`make test-integration`, `make test-e2e`) do not publish Grafana, so they never collide with this port.
 
+#### Telemetry gateway
+
+`make up` also starts `telemetry-gateway` (`ops/telemetry-gateway/gateway.py`, standard-library Python in the `python:3.12-slim` image already used by the alert receiver): a read-only, bearer-token gateway to the Loki, Tempo, and Prometheus inside `lgtm`, so the on-call agent (#35) can query telemetry without Grafana (anonymous admin) or the raw backends being exposed. It is published on `127.0.0.1:8380` only (change with `PODCLATCH_TELEMETRY_GATEWAY_PORT`).
+
+- **Token:** generate one yourself (`openssl rand -hex 32`) and write it into the git-ignored `.env` as `TELEMETRY_GATEWAY_TOKEN=...`; then `docker compose up -d telemetry-gateway`. With the token unset, `make up` still works and the gateway answers every request with 503 (fail closed). A request without `Authorization: Bearer <token>`, or with a wrong one, gets 401 (compared in constant time) and nothing is sent upstream.
+- **Paths** (one prefix per backend): Loki `/loki/loki/api/v1/{query,query_range,labels}` and `/loki/loki/api/v1/label/<name>/values`; Tempo `/tempo/api/traces/<hex id>` and `/tempo/api/search`; Prometheus `/prom/api/v1/{query,query_range}`. Only `GET` and `HEAD`. Everything else (Grafana, Loki push, admin, `/metrics`, any other method) gets 403 or 405. The raw path is matched as-is against the allowlist and never decoded or normalised, so a path with a `..` segment or a `%2f` is refused (a leading `//` is collapsed to `/` by Python's HTTP server before the check, which does not widen the allowlist). A query string must be printable ASCII with no spaces (percent-encode the rest) or the gateway answers 400, and a client that stays silent for 5 s is disconnected.
+- **Limits:** a response over **4 MiB** is refused (502) instead of streamed, and an upstream call is cut off after **20 s** (504).
+- **Logs:** `docker compose logs telemetry-gateway` shows the method, path, and status only, never the query string or the `Authorization` header.
+- **Example** (bash; reads the token from `.env` without printing it):
+
+  ```bash
+  TOKEN=$(grep '^TELEMETRY_GATEWAY_TOKEN=' .env | cut -d= -f2- | tr -d '\r')
+  curl -sG -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8380/loki/loki/api/v1/query_range \
+    --data-urlencode 'query={service_name="podclatch-server"}' --data-urlencode 'limit=5'
+  ```
+
+- **Warning:** the gateway is the only thing that may ever be tunnelled. Never expose Grafana (3180) or the raw Loki, Tempo, or Prometheus ports. The tunnel itself is #119.
+- **Tests:** `make test-integration` and `make test-e2e` do not start it (its profile is never enabled there). `ops/tests/test_telemetry_gateway.py` checks it statically and, when Docker is available, against a throwaway project `podclatch-t117`.
+
 #### Alerting
 
 `make up` also provisions an alert in Grafana, defined as code in `ops/grafana/provisioning/alerting/` (mounted read-only into `lgtm`; no clicking in the UI). It fires when the server is failing its users.
