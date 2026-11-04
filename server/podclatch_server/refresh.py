@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
-from opentelemetry.trace import SpanKind, Status, StatusCode
+from opentelemetry.trace import SpanKind
 
 from podclatch_server import telemetry
 from podclatch_server.feeds import FeedError
@@ -70,8 +70,9 @@ def _fetch_in_span(fetch: Fetcher, feed: Feed):
     """Fetch one Feed inside a client span (the outbound call to the feed host).
 
     The span records the Feed id only: never the URL, its query string, or its userinfo
-    (decision #27), and never the exception message. A failure marks the span with the exception
-    type name.
+    (decision #27). A failure marks the span with the scrubbed exception (`mark_span_error`): type
+    name, an `exception` event with the scrubbed, capped message and frame summary, and the same
+    message as the status description.
     """
     with telemetry.get_tracer().start_as_current_span(
         "fetch feed",
@@ -83,8 +84,7 @@ def _fetch_in_span(fetch: Fetcher, feed: Feed):
         try:
             return fetch(feed.feed_url)
         except Exception as exc:
-            span.set_status(Status(StatusCode.ERROR))
-            span.set_attribute("error.type", type(exc).__name__)
+            telemetry.mark_span_error(span, exc)
             raise
 
 

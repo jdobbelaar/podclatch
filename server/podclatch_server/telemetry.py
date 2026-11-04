@@ -4,6 +4,9 @@ Everything recorded here is chosen by hand: span names are `METHOD route-templat
 method, route template, status code, Feed ids, and counts. Request and response bodies, headers,
 query strings, and feed URLs are never recorded (spec decision #27), which is why the HTTP spans
 come from `TelemetryMiddleware` below rather than from a library that records `http.url`.
+Exception data is the one exception to "chosen by hand": the type name, a message, and a frame
+summary are exported, but only after `scrub.scrub_exception` (issue #123); the SDK never records a
+raw exception (`record_exception=False` everywhere, events are added by hand).
 
 Providers are owned by this module (never the OpenTelemetry globals), so tests can swap in
 in-memory ones with `install`. With no `OTEL_EXPORTER_OTLP_ENDPOINT` the providers have no
@@ -11,10 +14,12 @@ exporter: spans still get ids (so logs carry a `trace_id`) but nothing leaves th
 
 Logs: with an endpoint, records of the `podclatch_server` and `uvicorn.access` loggers are also
 exported over OTLP by `OtlpLogHandler`. The stock SDK `LoggingHandler` is not used because it
-copies exception messages, stack traces, and every `extra` field (decision #27). The log API of
-OpenTelemetry Python 1.45 still lives under the underscore modules `opentelemetry.sdk._logs` and
-`opentelemetry._logs`; they are the only place it exists, and the pin in `pyproject.toml` is the
-guard against a rename.
+copies raw exception messages, stack traces, and every `extra` field (decision #27). An unhandled
+exception in a request is logged by `TelemetryMiddleware` on a `podclatch_server` logger (so it is
+exported with the span's trace id); `uvicorn.error`, whose traceback text is unscrubbed, is not.
+The log API of OpenTelemetry Python 1.45 still lives under the underscore modules
+`opentelemetry.sdk._logs` and `opentelemetry._logs`; they are the only place it exists, and the pin
+in `pyproject.toml` is the guard against a rename.
 """
 
 import logging
@@ -38,11 +43,15 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from podclatch_server.scrub import scrub_exception
+
 logger = logging.getLogger(__name__)
 
 SCOPE = "podclatch_server"
 EXPORTED_LOGGERS = ("podclatch_server", "uvicorn.access")
-LOG_ATTRIBUTE_KEYS = frozenset({"logger.name", "exception.type"})
+LOG_ATTRIBUTE_KEYS = frozenset(
+    {"logger.name", "exception.type", "exception.message", "exception.stacktrace"}
+)
 UNTRACED_PATHS = frozenset({"/healthz"})
 EXPORT_TIMEOUT_SECONDS = 5
 METRIC_EXPORT_INTERVAL_MS = 15_000
@@ -68,8 +77,10 @@ class OtlpLogHandler(logging.Handler):
 
     Exported: the formatted message (the same text the stderr line has, after
     `RedactQueryFilter`), the severity, the active trace and span ids (taken from the current
-    context, so nothing is invented outside a span), the logger name, and the exception type
-    name. Never exported: exception message or stack trace, `args`, and `extra` fields.
+    context, so nothing is invented outside a span), the logger name, and, for a record with
+    `exc_info`, the exception type name plus the message and frame summary from
+    `scrub.scrub_exception` (scrubbed and capped). Never exported: raw exception text, source
+    lines, local variables, `args`, and `extra` fields.
     """
 
     def __init__(self, provider: LoggerProvider) -> None:
@@ -81,7 +92,14 @@ class OtlpLogHandler(logging.Handler):
         try:
             attributes: dict[str, str] = {"logger.name": record.name}
             if record.exc_info and record.exc_info[0] is not None:
-                attributes["exception.type"] = record.exc_info[0].__name__
+                exc = record.exc_info[1]
+                if exc is None:
+                    attributes["exception.type"] = record.exc_info[0].__name__
+                else:
+                    scrubbed = scrub_exception(exc)
+                    attributes["exception.type"] = scrubbed.type
+                    attributes["exception.message"] = scrubbed.message
+                    attributes["exception.stacktrace"] = scrubbed.stacktrace
             number, text = _SEVERITY[min(max(record.levelno // 10 * 10, 10), 50)]
             self._logger.emit(
                 timestamp=int(record.created * 1e9),
@@ -217,6 +235,24 @@ def get_tracer() -> trace.Tracer:
     return _state.tracer
 
 
+def mark_span_error(span: trace.Span, exc: BaseException) -> None:
+    """Mark a span failed with the scrubbed exception: type, `exception` event, status description.
+
+    The only way an exception reaches a span; the raw exception is never recorded (issue #123).
+    """
+    scrubbed = scrub_exception(exc)
+    span.set_attribute("error.type", scrubbed.type)
+    span.add_event(
+        "exception",
+        {
+            "exception.type": scrubbed.type,
+            "exception.message": scrubbed.message,
+            "exception.stacktrace": scrubbed.stacktrace,
+        },
+    )
+    span.set_status(Status(StatusCode.ERROR, scrubbed.message))
+
+
 def record_request(method: str, route: str, status: int, seconds: float) -> None:
     if _state.request_count is None:
         return
@@ -259,6 +295,7 @@ class TelemetryMiddleware:
         parent = _propagator.extract(carrier)
         status = 500
         started = time.perf_counter()
+        failed = False
 
         async def send_wrapper(message: Message) -> None:
             nonlocal status
@@ -276,7 +313,11 @@ class TelemetryMiddleware:
             try:
                 await self.app(scope, receive, send_wrapper)
             except Exception as exc:
-                span.set_attribute("error.type", type(exc).__name__)
+                failed = True
+                mark_span_error(span, exc)
+                # Logged here (inside the span, so it carries the trace id) rather than exporting
+                # `uvicorn.error`, whose formatted traceback is not scrubbed.
+                logger.error("unhandled exception in %s request", method, exc_info=exc)
                 raise
             finally:
                 route = getattr(scope.get("route"), "path", None) or "unmatched"
@@ -284,6 +325,6 @@ class TelemetryMiddleware:
                 span.set_attribute("http.request.method", method)
                 span.set_attribute("http.route", route)
                 span.set_attribute("http.response.status_code", status)
-                if status >= 500:
+                if status >= 500 and not failed:
                     span.set_status(Status(StatusCode.ERROR))
                 record_request(method, route, status, time.perf_counter() - started)

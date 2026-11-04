@@ -181,7 +181,7 @@ def test_refresh_has_child_spans_per_feed_fetch(cap, client, fetcher):
     assert set(fetch.attributes) <= {"feed.id", "error.type"}
 
 
-def test_failed_fetch_marks_the_span_with_the_exception_type_only(cap, client, fetcher):
+def test_failed_fetch_marks_the_span_with_the_scrubbed_exception(cap, client, fetcher):
     client.post("/v1/feeds", json={"feedUrl": URL_A})
     fetcher.results[URL_A] = FeedUnreachableError(f"could not reach {SECRET_URL}")
     cap.spans.clear()
@@ -189,7 +189,15 @@ def test_failed_fetch_marks_the_span_with_the_exception_type_only(cap, client, f
     (fetch,) = cap.finished("fetch feed")
     assert fetch.attributes["error.type"] == "FeedUnreachableError"
     assert fetch.status.status_code.name == "ERROR"
-    assert not fetch.events
+    (event,) = fetch.events
+    assert event.name == "exception"
+    assert event.attributes["exception.type"] == "FeedUnreachableError"
+    assert event.attributes["exception.message"] == (
+        "FeedUnreachableError: could not reach https://example.com"
+    )
+    assert fetch.status.description == event.attributes["exception.message"]
+    assert "exception.stacktrace" in event.attributes
+    assert "SECRET123" not in cap.everything_exported()
 
 
 # --- metrics -------------------------------------------------------------------------------------
@@ -254,7 +262,7 @@ def test_log_outside_a_span_has_no_trace_id(cap):
     assert "trace_id" not in line and "span_id" not in line
 
 
-def test_exception_text_is_never_logged(cap):
+def test_raw_exception_text_is_never_logged_to_stderr(cap):
     try:
         raise ValueError(f"DETAIL: Key (feed_url)=({SECRET_URL}) already exists")
     except ValueError:
@@ -299,6 +307,18 @@ def test_scheduled_refresh_runs_in_a_trace(cap, app, client, fetcher):
     assert [p.value for p in cap.points("podclatch.refresh.feeds")] == [1]
 
 
+def make_chained_failure(url: str) -> Exception:
+    """A failure whose message, cause, and context carry a feed URL, the token, and a bearer."""
+    cause = RuntimeError(f"cause {url}&x=CAUSESECRET")
+    try:
+        try:
+            raise cause
+        except RuntimeError:
+            raise ValueError(f"bad {url} with {TOKEN} and Bearer bearer-secret-value") from cause
+    except ValueError as exc:
+        return exc
+
+
 # --- redaction (mandatory) -----------------------------------------------------------------------
 
 
@@ -320,6 +340,10 @@ def test_no_secret_reaches_any_span_metric_or_log_line(cap, app, client, fetcher
     created = client.post("/v1/feeds", json={"feedUrl": secret_url})
     assert created.status_code == 201
     client.post("/v1/feeds", json={"feedUrl": failing})
+    boom = "https://example.com/boom.xml?token=BOOMSECRET"
+    fetcher.results[boom] = make_chained_failure(boom)
+    crashed = TestClient(app, headers=AUTH, raise_server_exceptions=False)
+    assert crashed.post("/v1/feeds", json={"feedUrl": boom}).status_code == 500
     feed_id = created.json()["id"]
     assert client.post("/v1/refresh", headers={"traceparent": TRACEPARENT}).status_code == 200
     client.post(f"/v1/feeds/{feed_id}/refresh")
@@ -344,6 +368,9 @@ def test_no_secret_reaches_any_span_metric_or_log_line(cap, app, client, fetcher
         "zebra-search",
         "QUERYSECRET",
         "FAILSECRET",
+        "BOOMSECRET",
+        "CAUSESECRET",
+        "bearer-secret-value",
         "AUDIOSECRET",
         TITLE,
         DESCRIPTION,
@@ -355,6 +382,13 @@ def test_no_secret_reaches_any_span_metric_or_log_line(cap, app, client, fetcher
     assert any("refreshed feed" in r.body for r in cap.exported_logs())
     for record in cap.exported_logs():
         assert set(record.attributes) <= ALLOWED_LOG_ATTRIBUTE_KEYS
+    # The scrubbed text is present on the log record, the span event, and the status description.
+    (record,) = [r for r in cap.exported_logs() if "exception.message" in r.attributes]
+    (span,) = [s for s in cap.finished("POST /v1/feeds") if s.status.description]
+    (event,) = [e for e in span.events if e.name == "exception"]
+    scrubbed = event.attributes["exception.message"]
+    assert "https://example.com" in scrubbed and "[redacted]" in scrubbed
+    assert record.attributes["exception.message"] == scrubbed == span.status.description
     for span in cap.finished():
         assert all(
             key not in span.attributes
@@ -369,7 +403,12 @@ def test_no_secret_reaches_any_span_metric_or_log_line(cap, app, client, fetcher
 
 
 # --- logs over OTLP (US-36d) ---------------------------------------------------------------------
-ALLOWED_LOG_ATTRIBUTE_KEYS = {"logger.name", "exception.type"}
+ALLOWED_LOG_ATTRIBUTE_KEYS = {
+    "logger.name",
+    "exception.type",
+    "exception.message",
+    "exception.stacktrace",
+}
 
 
 def exported_handlers() -> list:
@@ -450,16 +489,52 @@ def test_access_record_is_exported_without_the_query_string(cap, app):
     assert "/v1/search" in record.body and "SECRET123" not in record.body
 
 
-def test_exception_text_is_not_exported(cap):
+def test_exception_text_is_exported_only_scrubbed(cap):
     try:
         raise ValueError(f"DETAIL: Key (feed_url)=({SECRET_URL}) already exists")
     except ValueError:
         logging.getLogger("podclatch_server.x").exception("boom")
     (record,) = cap.exported_logs()
     assert record.attributes["exception.type"] == "ValueError"
-    assert "exception.message" not in record.attributes
-    assert "exception.stacktrace" not in record.attributes
+    assert record.attributes["exception.message"] == (
+        "ValueError: DETAIL: Key (feed_url)=(https://example.com) already exists"
+    )
+    # The test function name is 40 characters, so the opaque-string rule redacts it.
+    assert record.attributes["exception.stacktrace"].startswith("tests/test_telemetry.py:")
     assert "SECRET123" not in cap.everything_exported()
+    assert "user:pw" not in cap.everything_exported()
+
+
+def test_unhandled_exception_in_a_route_has_log_record_span_event_and_status(cap, app, fetcher):
+    fetcher.results[URL_A] = ValueError("bad <itunes:duration> shape H:MM:SS.fff")
+    crashed = TestClient(app, headers=AUTH, raise_server_exceptions=False)
+    assert crashed.post("/v1/feeds", json={"feedUrl": URL_A}).status_code == 500
+    (span,) = cap.finished("POST /v1/feeds")
+    (event,) = [e for e in span.events if e.name == "exception"]
+    text = "ValueError: bad <itunes:duration> shape H:MM:SS.fff"
+    assert event.attributes["exception.message"] == text
+    assert event.attributes["exception.type"] == "ValueError"
+    assert span.status.status_code.name == "ERROR" and span.status.description == text
+    assert span.attributes["error.type"] == "ValueError"
+    (record,) = [r for r in cap.exported_logs() if "exception.message" in r.attributes]
+    assert record.attributes["exception.message"] == text
+    assert record.attributes["logger.name"] == "podclatch_server.telemetry"
+    assert format(record.trace_id, "032x") == format(span.context.trace_id, "032x")
+    assert format(record.span_id, "016x") == format(span.context.span_id, "016x")
+    assert "routes/feeds.py" in record.attributes["exception.stacktrace"]
+
+
+def test_uvicorn_error_logger_is_not_exported(cap):
+    assert "uvicorn.error" not in telemetry.EXPORTED_LOGGERS
+    logging.getLogger("uvicorn.error").error("Exception in ASGI application\n%s", SECRET_URL)
+    assert cap.exported_logs() == []
+
+
+def test_handled_4xx_is_not_an_error_span_or_log(cap, client):
+    assert client.get("/v1/feeds/999/episodes").status_code == 404
+    (span,) = cap.finished()
+    assert not span.events and span.status.status_code.name != "ERROR"
+    assert [r for r in cap.exported_logs() if "exception.message" in r.attributes] == []
 
 
 def test_args_and_extra_are_not_exported_as_attributes(cap):

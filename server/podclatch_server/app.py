@@ -8,6 +8,7 @@ from podclatch_server.errors import register_error_handlers
 from podclatch_server.logging_setup import configure_logging
 from podclatch_server.routes import episodes, feeds, health, refresh, search
 from podclatch_server.scheduler import lifespan
+from podclatch_server.scrub import register_secrets
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -15,6 +16,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = load_settings()
     configure_logging(settings.log_level)
+    register_secrets(settings.token)
     telemetry.configure(settings.otel_service_name, settings.otel_endpoint)
     # No interactive docs or schema routes: only /healthz may be reachable without the token.
     app = FastAPI(
