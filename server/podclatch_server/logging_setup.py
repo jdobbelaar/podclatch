@@ -10,7 +10,9 @@ the app, so it works under plain `uvicorn` and in the Docker image alike.
 
 Records are written to stderr as one JSON object per line (`JsonFormatter`). A record emitted
 while a span is active also carries `trace_id` and `span_id`, so logs, traces, and metrics line
-up. Exception text is never written (it can echo secrets); only the exception type name is.
+up. The stderr line carries only the exception type name; the OTLP export of the same record
+also carries the scrubbed, capped message and frame summary (`scrub.scrub_exception`, issue #123),
+so the two differ. Raw exception text is never written by this formatter (it can echo secrets).
 """
 
 import json
