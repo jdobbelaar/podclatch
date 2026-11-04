@@ -11,8 +11,10 @@ What it does to the text of an exception and of every exception in its `__cause_
    `register_secrets`) are replaced by `[redacted]` wherever they appear, inside longer strings too.
 2. Every URL of any scheme is reduced to `scheme://host`: userinfo, port, path, query string, and
    fragment are dropped.
-3. The value of `Authorization:` and similar header text (also quoted, as in a dict or JSON repr),
-   and `Bearer` or `Basic` values, become `[redacted]`. Bracketed IPv6 hosts are kept as hosts.
+3. From a word such as `Authorization`, `Bearer`, `Basic`, `X-Api-Key`, or `Cookie` (any case,
+   quoting, or spacing) to the end of the message becomes `[redacted]`: the value's quoting is not
+   parsed, so nothing after the word can leak. Bracketed IPv6 hosts are kept as hosts; a URL with an
+   unclosed bracket redacts the rest of the message.
 4. Runs of `OPAQUE_MIN_CHARS` or more characters of `[A-Za-z0-9_-]` (and padded base64) become
    `[redacted]`.
 5. The result is cut to `MAX_CHARS` characters, after scrubbing, with a visible marker.
@@ -36,18 +38,22 @@ MAX_CHARS = 1000
 OPAQUE_MIN_CHARS = 24
 MAX_CHAIN_DEPTH = 5
 MAX_FRAMES = 20
+RAW_LINK_CHARS = 2000
 SECRET_ENV_VARS = ("PODCLATCH_TOKEN", "TELEMETRY_GATEWAY_TOKEN")
 
-_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://(?:\[[^\]\s]*\]|[^\s'\"<>()\[\]{}`])*")
-# A header name (optionally quoted, as in a dict or JSON repr), a colon or equals sign, then the
-# value: a quoted string or the rest of the line.
-_AUTH_HEADER = re.compile(
-    r"(?i)\b(authorization|proxy-authorization|x-api-key|x-auth-token|api[-_]?key|set-cookie|cookie)"
-    r"""["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\r\n]*)"""
+# Every pattern is linear in the input: bounded quantifiers, and a lookbehind (with a possessive
+# quantifier) so a run of characters is scanned once, not once per starting position. The raw text
+# is also cut to RAW_LINK_CHARS per exception before any pattern runs.
+_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]{0,31}://(?:\[[^\]\s]{0,64}\]|[^\s'\"<>()\[\]{}`])*")
+# Fail closed: from one of these words (any case, any quoting or spacing around it) to the end of
+# the message is redacted, rather than trying to parse the value's quoting. `Basic` and `cookie`
+# are ordinary words too; losing the text after them is accepted, a leak is not.
+_SENSITIVE = re.compile(
+    r"(?is)\b(authorization|proxy-authorization|x-api-key|x-auth-token|api[-_]?key|"
+    r"set-cookie|cookie|bearer|basic)\b.*"
 )
-_BEARER_BASIC = re.compile(r"(?i)\b(?:bearer|basic)(?:\s*[:=]\s*|\s+)[^\s'\",;}]+")
-_OPAQUE = re.compile(rf"(?<![A-Za-z0-9_\-])[A-Za-z0-9_\-]{{{OPAQUE_MIN_CHARS},}}")
-_BASE64_PADDED = re.compile(r"[A-Za-z0-9+/]{16,}={1,2}")
+_OPAQUE = re.compile(rf"(?<![A-Za-z0-9_\-])[A-Za-z0-9_\-]{{{OPAQUE_MIN_CHARS},}}+")
+_BASE64_PADDED = re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{16,}+={1,2}")
 
 _extra_secrets: set[str] = set()
 
@@ -86,14 +92,40 @@ def _reduce_url(match: re.Match[str]) -> str:
     return f"{scheme}://{host}"
 
 
+def _reduce_urls(text: str) -> str:
+    out: list[str] = []
+    pos = 0
+    for match in _URL.finditer(text):
+        out.append(text[pos : match.start()])
+        end = match.end()
+        if (
+            text[end : end + 1] == "["
+        ):  # an unclosed bracket: not a URL we can reduce, so fail closed
+            scheme = match.group(0).partition("://")[0]
+            out.append(f"{scheme}://{REDACTED}")
+            return "".join(out)
+        out.append(_reduce_url(match))
+        pos = end
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def _scrub(text: str) -> str:
     for secret in _known_secrets():
         text = text.replace(secret, REDACTED)
-    text = _URL.sub(_reduce_url, text)
-    text = _AUTH_HEADER.sub(lambda m: f"{m.group(1)}: {REDACTED}", text)
-    text = _BEARER_BASIC.sub(REDACTED, text)
+    text = _reduce_urls(text)
+    text = _SENSITIVE.sub(REDACTED, text)
     text = _BASE64_PADDED.sub(REDACTED, text)
     return _OPAQUE.sub(REDACTED, text)
+
+
+def _raw_cap(text: str) -> str:
+    """Cut raw text before any pattern runs, dropping a trailing partial word."""
+    if len(text) <= RAW_LINK_CHARS:
+        return text
+    head = text[:RAW_LINK_CHARS]
+    cut = max(head.rfind(" "), head.rfind("\n"), head.rfind("\t"))
+    return (head[:cut] if cut > 0 else "") + TRUNCATION_MARKER
 
 
 def _cap(text: str) -> str:
@@ -115,6 +147,7 @@ def _link_text(exc: BaseException) -> str:
         detail = str(exc)
     except Exception:
         return name
+    detail = _raw_cap(detail)
     return f"{name}: {detail}" if detail else name
 
 

@@ -1,6 +1,7 @@
 """The exception scrubber (issue #123): no secret survives, ordinary messages do. No network."""
 
 import inspect
+import time
 
 import pytest
 
@@ -77,8 +78,56 @@ def test_ipv6_urls_and_quoted_header_forms_do_not_leak(text, secret):
 def test_ipv6_host_is_kept_and_the_rest_of_the_message_survives():
     out = message(ValueError("at http://[::1]:80/SEKRET21 failed"))
     assert out == "ValueError: at http://[::1] failed"
-    quoted = message(ValueError("""{"Authorization": "Token X1", "Accept": "text/xml"}"""))
-    assert '"Accept": "text/xml"' in quoted
+    assert "SEKRET21" not in out
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Bearer 'SEKRET80'",
+        'Bearer "SEKRET81 x"',
+        'Bearer"SEKRET79"',
+        '{"Authorization": "Token \\"SEKRET64\\" more SEKRET65"}',
+        'Authorization "SEKRET78"',
+        "{'Authorization': \"Token it's SEKRET63\"}",
+        "Authorization:\n SEKRET75",
+        'Authorization: "Token SEKRET62 with spaces"',
+        "{'Cookie': 'sid=SEKRET54; x=SEKRET55'}",
+        "Proxy-Authorization: Basic SEKRET66",
+        "x http://[::1 /SEKRET32",
+        "http://[::1:80/SEKRET33",
+        "http://[::1]@evil/SEKRET35",
+    ],
+)
+def test_quoted_and_malformed_forms_fail_closed(text):
+    assert "SEKRET" not in message(ValueError(text))
+
+
+HUGE = {
+    "letters": lambda: "a" * 200_000,
+    "equals-runs": lambda: "A=" * 100_000,
+    "scheme-repeats": lambda: "http://" * 30_000,
+    "brackets": lambda: "[" * 200_000,
+    "url-bracket-repeats": lambda: "http://[" * 25_000,
+    "quote-flood": lambda: "Authorization: " + '"' * 100_000,
+    "padded-run": lambda: "a" * 100_000 + "=",
+    "mixed": lambda: "[" * 100_000 + "http://[" * 5_000,
+}
+
+
+@pytest.mark.parametrize("kind", sorted(HUGE))
+def test_scrubbing_a_huge_message_is_fast(kind):
+    text = HUGE[kind]()
+    started = time.perf_counter()
+    result = scrub_exception(ValueError(text))
+    assert time.perf_counter() - started < 1.0
+    assert len(result.message) <= MAX_CHARS
+
+
+def test_raw_message_is_cut_before_scrubbing_and_drops_a_partial_word():
+    text = "word " * 600 + "SEKRETPARTIAL"
+    out = message(ValueError(text))
+    assert "SEKRET" not in out and out.endswith(TRUNCATION_MARKER)
 
 
 def test_url_is_reduced_to_scheme_and_host():
