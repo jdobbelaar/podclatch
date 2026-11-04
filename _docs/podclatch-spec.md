@@ -137,8 +137,12 @@ podcast), *Episode*, *Queue*, *Feed Priority*, *Listen Order*, *New* / *Played*,
 26. Outbound fetches (feeds, iTunes) use a 15-second timeout, follow
     redirects, and cap response size at 10 MB.
 27. **Feed URLs can contain secrets** (private/Patreon feeds embed tokens in
-    the URL). The server must never write full feed URLs to logs, traces, or
-    metrics; log the Feed id, or the URL with its query string removed.
+    the URL). The server must never write feed URLs, tokens, or credentials to
+    logs, traces, or metrics. Exception messages and stack summaries may be
+    exported to telemetry only after passing the single scrubbing function
+    (URLs reduced to scheme and host, tokens and credentials redacted, length
+    capped). Full tracebacks, source lines, and local variable values are never
+    exported.
 28. The server never fetches, stores, or serves podcast audio.
 29. Single user, single server instance. No horizontal-scaling concerns.
 
@@ -737,6 +741,7 @@ unused so other story numbers stay stable. Do not create an issue for it.)
   on API calls so a client request and its server work share one trace.
 - No customer data or credentials in telemetry: no tokens, no full feed URLs
   (decision #27), no episode titles or descriptions. A test asserts redaction.
+  Scrubbed exception messages are allowed (decision #27).
 - `docker-compose.yaml` gains an OpenTelemetry Collector and a Grafana-based
   UI (e.g. the `grafana/otel-lgtm` image) so signals are collected, stored, and
   viewable locally; the README shows where to look.
