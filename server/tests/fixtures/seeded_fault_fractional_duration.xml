@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Seeded fault fixture for the on-call demo (issue #118). Lives only on the branch
+     demo/seeded-fault. The second episode has a fractional-seconds itunes:duration, which
+     parse_feed on that branch does not handle. No real feed URL and no secret in here. -->
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Seeded Fault Demo Show</title>
+    <itunes:author>PodClatch Demo</itunes:author>
+    <description>A feed that triggers the deliberate fault on demo/seeded-fault.</description>
+    <item>
+      <title>Episode with a normal duration</title>
+      <guid>seeded-fault-1</guid>
+      <pubDate>Mon, 02 Jan 2023 10:00:00 GMT</pubDate>
+      <itunes:duration>12:34</itunes:duration>
+      <enclosure url="https://example.com/seeded-fault-1.mp3" type="audio/mpeg" length="1"/>
+    </item>
+    <item>
+      <title>Episode with a fractional-seconds duration</title>
+      <guid>seeded-fault-2</guid>
+      <pubDate>Tue, 03 Jan 2023 10:00:00 GMT</pubDate>
+      <itunes:duration>01:02:03.500</itunes:duration>
+      <enclosure url="https://example.com/seeded-fault-2.mp3" type="audio/mpeg" length="1"/>
+    </item>
+  </channel>
+</rss>
