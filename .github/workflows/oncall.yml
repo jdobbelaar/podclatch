@@ -1,0 +1,287 @@
+name: On-call agent
+
+# US-38 (issue #35). The local Grafana alert "PodClatch Server 5xx ratio high" reaches this workflow
+# through a repository_dispatch event (issue #113). A headless Claude Code agent then reads the
+# telemetry through a read-only gateway (issue #117), reproduces the fault with a failing test, and a
+# second job opens a pull request. The agent never merges; the human does.
+#
+# repository_dispatch only runs the copy of this file that is on the default branch.
+#
+# Jobs (least privilege; the agent never holds a token that can push or open a pull request):
+#   gate      validates the payload, applies the kill switch, and checks the duplicate and rate limits
+#   diagnose  runs the agent (contents: read). Holds ANTHROPIC_API_KEY and TELEMETRY_GATEWAY_TOKEN
+#             in the one step that runs the agent
+#   open-pr   applies the validated patch to a new branch and opens the pull request (no agent, no key)
+#
+# The alert payload and all telemetry are untrusted input: nothing from them is interpolated into a
+# `run:` script. Payload text reaches scripts only through `env:`.
+
+on:
+  repository_dispatch:
+    types: [podclatch-alert]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Validate and build the prompt and command only; no Anthropic call, tunnel, branch, or PR"
+        type: boolean
+        default: true
+      check_only:
+        description: "With dry_run off: only check the telemetry gateway (200 with the token, 401 without)"
+        type: boolean
+        default: false
+      payload:
+        description: "Alert payload as a JSON string (same shape as client_payload); empty uses ops/oncall/example-payload.json"
+        type: string
+        default: ""
+      base_branch:
+        description: "Branch to check out and open the pull request against (default: the repository variable ONCALL_BASE_BRANCH, else main)"
+        type: string
+        default: ""
+
+run-name: >-
+  ${{ github.event_name == 'repository_dispatch' && 'on-call agent (alert dispatch)' ||
+  format('on-call agent (manual, dry_run={0}, check_only={1})', inputs.dry_run, inputs.check_only) }}
+
+permissions: {}
+
+# One agent run at a time; a second dispatch queues instead of racing.
+concurrency:
+  group: oncall-${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      action: ${{ steps.decide.outputs.action }}
+      base: ${{ steps.mode.outputs.base }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Choose the mode and the base branch
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CHECK_ONLY: ${{ inputs.check_only }}
+          ONCALL_ENABLED: ${{ vars.ONCALL_ENABLED }}
+          INPUT_BASE: ${{ inputs.base_branch }}
+          VAR_BASE: ${{ vars.ONCALL_BASE_BRANCH }}
+        run: |
+          set -eu
+          if [ "${EVENT_NAME}" = "repository_dispatch" ]; then
+            DRY_RUN=false
+            CHECK_ONLY=false
+          fi
+          # A dry run costs nothing and needs no secret, so the kill switch does not block it.
+          if [ "${DRY_RUN}" = "true" ]; then
+            mode=dry-run
+          elif [ "${ONCALL_ENABLED}" != "true" ]; then
+            mode=disabled
+          elif [ "${CHECK_ONLY}" = "true" ]; then
+            mode=check
+          else
+            mode=run
+          fi
+          base="${INPUT_BASE:-${VAR_BASE:-main}}"
+          if ! printf '%s' "${base}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$' \
+              || printf '%s' "${base}" | grep -Fq '..'; then
+            echo "The base branch name is not acceptable." >&2
+            exit 1
+          fi
+          echo "mode=${mode}" >> "${GITHUB_OUTPUT}"
+          echo "base=${base}" >> "${GITHUB_OUTPUT}"
+          echo "mode: ${mode}"
+
+      - name: Validate the alert payload
+        id: validate
+        if: steps.mode.outputs.mode == 'dry-run' || steps.mode.outputs.mode == 'run'
+        env:
+          PAYLOAD_JSON: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload) || inputs.payload }}
+        run: |
+          set -eu
+          if [ -z "${PAYLOAD_JSON}" ]; then
+            PAYLOAD_JSON="$(cat ops/oncall/example-payload.json)"
+            export PAYLOAD_JSON
+          fi
+          python3 ops/oncall/validate_payload.py --out "${RUNNER_TEMP}/payload.json"
+
+      - name: Check for a duplicate and the rate limit
+        id: guard
+        if: steps.mode.outputs.mode == 'run' && steps.validate.outputs.result == 'ok'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SLUG: ${{ steps.validate.outputs.slug }}
+        run: python3 ops/oncall/guard.py --repo "${REPO}" --slug "${SLUG}" --run-id "${RUN_ID}"
+
+      - name: Decide what runs
+        id: decide
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
+          VALIDATE_RESULT: ${{ steps.validate.outputs.result }}
+          VALIDATE_REASON: ${{ steps.validate.outputs.reason }}
+          GUARD_SKIP: ${{ steps.guard.outputs.skip }}
+          GUARD_REASON: ${{ steps.guard.outputs.skip_reason }}
+        run: |
+          set -eu
+          action=none
+          note="skipped"
+          case "${MODE}" in
+            disabled) note="skipped: ONCALL_ENABLED is not 'true' (kill switch)" ;;
+            check) action=check; note="gateway check" ;;
+            dry-run | run)
+              if [ "${VALIDATE_RESULT}" != "ok" ]; then
+                note="skipped: payload (${VALIDATE_REASON})"
+              elif [ "${GUARD_SKIP}" = "true" ]; then
+                note="${GUARD_REASON}"
+              else
+                action="${MODE}"
+                note="proceeding: ${MODE}"
+              fi
+              ;;
+          esac
+          echo "action=${action}" >> "${GITHUB_OUTPUT}"
+          echo "${note}"
+          echo "${note}" >> "${GITHUB_STEP_SUMMARY}"
+
+  diagnose:
+    name: diagnose
+    needs: gate
+    if: needs.gate.outputs.action == 'dry-run' || needs.gate.outputs.action == 'check' || needs.gate.outputs.action == 'run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      has_patch: ${{ steps.agent.outputs.has_patch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.gate.outputs.base }}
+          persist-credentials: false
+
+      - name: Validate the alert payload
+        if: needs.gate.outputs.action != 'check'
+        env:
+          PAYLOAD_JSON: ${{ github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload) || inputs.payload }}
+        run: |
+          set -eu
+          if [ -z "${PAYLOAD_JSON}" ]; then
+            PAYLOAD_JSON="$(cat ops/oncall/example-payload.json)"
+            export PAYLOAD_JSON
+          fi
+          python3 ops/oncall/validate_payload.py --out oncall-out/payload.json
+
+      - name: Dry run, build the prompt and the command
+        if: needs.gate.outputs.action == 'dry-run'
+        run: python3 ops/oncall/run_agent.py --payload oncall-out/payload.json --out oncall-out --dry-run
+
+      - name: Check the telemetry gateway
+        if: needs.gate.outputs.action == 'check'
+        env:
+          TELEMETRY_URL: ${{ vars.TELEMETRY_URL }}
+          TELEMETRY_GATEWAY_TOKEN: ${{ secrets.TELEMETRY_GATEWAY_TOKEN }}
+        run: |
+          set -eu
+          if [ -n "${TELEMETRY_URL}" ]; then echo "::add-mask::${TELEMETRY_URL}"; fi
+          python3 ops/oncall/query.py --check
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        if: needs.gate.outputs.action == 'run'
+
+      - name: Install the server dependencies and the pinned Claude Code CLI
+        if: needs.gate.outputs.action == 'run'
+        run: |
+          set -eu
+          (cd server && uv sync)
+          npm install --global @anthropic-ai/claude-code@2.1.316
+
+      # The only step that holds the two secrets. Neither is echoed; the telemetry URL is masked too.
+      - name: Run the agent
+        id: agent
+        if: needs.gate.outputs.action == 'run'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEMETRY_GATEWAY_TOKEN: ${{ secrets.TELEMETRY_GATEWAY_TOKEN }}
+          TELEMETRY_URL: ${{ vars.TELEMETRY_URL }}
+        run: |
+          set -eu
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "ANTHROPIC_API_KEY is not set; stopping before the agent." >&2
+            exit 1
+          fi
+          if [ -n "${TELEMETRY_URL}" ]; then echo "::add-mask::${TELEMETRY_URL}"; fi
+          python3 ops/oncall/run_agent.py --payload oncall-out/payload.json --out oncall-out
+
+      - name: Upload the prompt, command, report, and patch
+        if: always() && needs.gate.outputs.action != 'check'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oncall-out
+          path: oncall-out/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  open-pr:
+    name: open-pr
+    needs: [gate, diagnose]
+    if: needs.gate.outputs.action == 'run' && needs.diagnose.outputs.has_patch == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.gate.outputs.base }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: oncall-out
+          path: oncall-out
+
+      - name: Validate the patch and the report again
+        run: python3 ops/oncall/validate_patch.py --patch oncall-out/patch.diff --report oncall-out/report.md
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ needs.gate.outputs.base }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -eu
+          branch="oncall/podclatch-server-5xx-ratio-high-${RUN_ID}"
+          git apply --check oncall-out/patch.diff
+          git checkout -b "${branch}"
+          git apply oncall-out/patch.diff
+          git diff --stat
+          git add -A -- server
+          git -c user.name="PodClatch on-call agent" -c user.email="oncall-agent@users.noreply.github.com" \
+            commit -m "On-call agent: proposed fix for PodClatch Server 5xx ratio high" -m "Run: ${RUN_URL}"
+          git push origin "${branch}"
+          {
+            cat oncall-out/report.md
+            printf '\n\n---\n'
+            printf 'Opened by the on-call agent workflow: %s\n\n' "${RUN_URL}"
+            printf 'CI does not run on this pull request (it was opened with GITHUB_TOKEN); the agent ran the server tests and ruff itself. '
+            printf 'Review it like any other change. It has not been merged and will not merge itself.\n'
+          } > oncall-out/pr-body.md
+          gh label create oncall-agent --color D93F0B --description "Opened by the on-call agent" --force || true
+          gh pr create --base "${BASE}" --head "${branch}" --label oncall-agent \
+            --title "On-call agent: proposed fix for PodClatch Server 5xx ratio high" \
+            --body-file oncall-out/pr-body.md

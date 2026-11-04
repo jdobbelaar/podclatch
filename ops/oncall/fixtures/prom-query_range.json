@@ -1,0 +1,12 @@
+{
+  "status": "success",
+  "data": {
+    "resultType": "matrix",
+    "result": [
+      {
+        "metric": {"http_response_status_class": "5xx", "http_route": "/v1/feeds"},
+        "values": [[1793455000, "0"], [1793455060, "0.2"], [1793455120, "0.4"], [1793455180, "0.5"]]
+      }
+    ]
+  }
+}
