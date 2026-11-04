@@ -232,12 +232,25 @@ This starts the server and its Postgres together. Run these from the repository 
 - **Paths** (one prefix per backend): Loki `/loki/loki/api/v1/{query,query_range,labels}` and `/loki/loki/api/v1/label/<name>/values`; Tempo `/tempo/api/traces/<hex id>` and `/tempo/api/search`; Prometheus `/prom/api/v1/{query,query_range}`. Only `GET` and `HEAD`. Everything else (Grafana, Loki push, admin, `/metrics`, any other method) gets 403 or 405. The raw path is matched as-is against the allowlist and never decoded or normalised, so a path with a `..` segment or a `%2f` is refused (a leading `//` is collapsed to `/` by Python's HTTP server before the check, which does not widen the allowlist). A query string must be printable ASCII with no spaces (percent-encode the rest) or the gateway answers 400, and a client that stays silent for 5 s is disconnected.
 - **Limits:** a response over **4 MiB** is refused (502) instead of streamed, and an upstream call is cut off after **20 s** (504).
 - **Logs:** `docker compose logs telemetry-gateway` shows the method, path, and status only, never the query string or the `Authorization` header.
-- **Example** (bash; reads the token from `.env` without printing it):
+- **Example, bash** (reads the token from `.env` without printing it):
 
   ```bash
   TOKEN=$(grep '^TELEMETRY_GATEWAY_TOKEN=' .env | cut -d= -f2- | tr -d '\r')
   curl -sG -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8380/loki/loki/api/v1/query_range \
     --data-urlencode 'query={service_name="podclatch-server"}' --data-urlencode 'limit=5'
+  ```
+
+- **Example, PowerShell** (use `curl.exe`: plain `curl` is a PowerShell alias for `Invoke-WebRequest`; the token is read from `.env` without printing it):
+
+  ```powershell
+  $t = ((Get-Content .env | Where-Object { $_ -like 'TELEMETRY_GATEWAY_TOKEN=*' }) -replace '^TELEMETRY_GATEWAY_TOKEN=','').Trim('"')
+  curl.exe -sG -H "Authorization: Bearer $t" http://127.0.0.1:8380/loki/loki/api/v1/query_range --data-urlencode 'query={service_name="podclatch-server"}' --data-urlencode 'limit=5'
+  ```
+
+  A wrong token must answer `401` (nothing is sent upstream):
+
+  ```powershell
+  curl.exe -s -o NUL -w "%{http_code}`n" -H "Authorization: Bearer wrong" http://127.0.0.1:8380/loki/loki/api/v1/query_range
   ```
 
 - **Warning:** the gateway is the only thing that may ever be tunnelled. Never expose Grafana (3180) or the raw Loki, Tempo, or Prometheus ports. The tunnel itself is #119.
@@ -381,6 +394,25 @@ When the Grafana alert "PodClatch Server 5xx ratio high" fires, a GitHub Actions
 **The agent's limits.** Runner: the pinned `@anthropic-ai/claude-code` CLI (2.1.316) run as `claude -p`, not a third-party action, so the tool allowlist and the turn limit are plain command-line flags. Model `claude-sonnet-5-5`, `--max-turns 30`, `--max-budget-usd 3`, `--permission-mode dontAsk` (anything not allowed is denied; there is no bypass mode). Allowed tools: Read, Grep, Glob; Edit and Write only under `server/podclatch_server/` and `server/tests/`; Bash only for `uv run pytest`, `uv run ruff`, `git diff`, `git status`, and `python3 ops/oncall/query.py`. No WebFetch, WebSearch, `curl`, `wget`, `gh`, `git push`, or MCP servers. Telemetry only reaches the agent through `ops/oncall/query.py`, which talks only to the configured host, has named read-only queries (`logs`, `trace`, `metric`) with bounded time ranges and limits, caps and truncates its output, never prints the token, and wraps every result as untrusted data. Rate and cost limits: one run at a time (`concurrency` group, a second dispatch queues), at most 3 agent runs per 24 hours, no new run while an open `oncall-agent` pull request exists for the same alert (both show as "skipped" with the reason in the run summary), a 20 minute job timeout, and only the 5xx alert dispatches. Cost of one run: not measured yet; the ceiling is the `--max-budget-usd 3` flag, and the first real run's `run-stats.json` in the artifact (turns and cost) will replace this sentence.
 
 **Residual risk.** `uv run pytest` runs code the agent just wrote, inside the step that holds `ANTHROPIC_API_KEY` and `TELEMETRY_GATEWAY_TOKEN`, so a successful prompt injection could in principle read both. That is why the Anthropic key must be spend-limited and the telemetry credential read-only and revocable, and why the gateway is the only thing ever tunnelled. A pull request opened with `GITHUB_TOKEN` does not trigger CI; the agent runs the server tests and ruff itself and says so in the pull request. Read the diff like any other change before you merge it.
+
+### On-call agent demo
+
+The fault is deliberate: it is seeded on purpose so the on-call agent has something real to diagnose, and it must never reach `main`.
+
+- **Branch:** `demo/seeded-fault`, cut from `main`, with exactly one fault commit on top (`git diff origin/main...origin/demo/seeded-fault` shows all of it). Never merge it and never open a pull request from it into `main`. Ask the engineer to rebase it when `main` moves. CI on this branch may fail on purpose, and no required check depends on it.
+- **The fault:** in `server/podclatch_server/feeds.py`, an `<itunes:duration>` of the shape `H:MM:SS.fff` (fractional seconds, for example `01:02:03.500`) raises an unhandled `ValueError` instead of falling back to "no duration". `POST /v1/feeds` for such a feed answers 500. (A scheduled Refresh of an already-subscribed feed catches the error per Feed and reports it in its result, so it does not answer 5xx; a feed with this duration cannot be subscribed in the first place.) The exception message names the field and the shape. `server/tests/test_seeded_fault.py` on that branch proves it.
+- **Fixture:** `server/tests/fixtures/seeded_fault_fractional_duration.xml`, on the demo branch only (no real feed URL, no secret).
+- **Trigger script:** `ops/oncall/trigger-fault.sh` (on `main`). The fixture is not on `main`, so the script takes it from a checkout of the demo branch: run it from a checkout (or `git worktree add ../podclatch-demo demo/seeded-fault`) of `demo/seeded-fault`, or point `ONCALL_FIXTURE` at a copy. The server you test must be built from that branch too.
+
+  ```bash
+  git worktree add ../podclatch-demo demo/seeded-fault   # once
+  cd ../podclatch-demo && cp /path/to/your/.env .env && make up
+  bash ops/oncall/trigger-fault.sh                        # Ctrl+C to stop
+  ```
+
+  It serves the fixture from a throwaway web server on `127.0.0.1:8480`, subscribes to it with the token from `.env` (read from the file, handed to curl on stdin, never printed) every 15 seconds, and prints only the HTTP status. It refuses any server URL whose host is not `localhost` or `127.0.0.1`. The server (in Docker) reaches the fixture through `host.docker.internal` (Docker Desktop); on Linux set `ONCALL_FIXTURE_HOST` to the host's address on the Docker network. Other knobs are listed at the top of the script (`ONCALL_SERVER_URL`, `ONCALL_FIXTURE_PORT`, `ONCALL_INTERVAL`, `ONCALL_MAX_REQUESTS`, `ONCALL_ENV_FILE`).
+- **What you will see** (one run in a throwaway Compose project built from the demo branch; first 500 at 0:00): the alert rule was Pending 30 seconds later and Firing after 5 minutes 30 seconds, and the local receiver got the `firing` webhook. `docker compose logs server` shows the traceback ending in `ValueError: itunes:duration with fractional seconds is not handled (shape H:MM:SS.fff, value '01:02:03.500')`. Loki (`{service_name="podclatch-server"}`) has the access-log line `POST /v1/feeds ... 500` but not the exception text (the server deliberately never exports exception messages, decision #27). Tempo (`{ status = error }`) has a `POST /v1/feeds` trace with status Error, `error.type=ValueError`, and `http.response.status_code=500`. So the telemetry points to the route and the exception type, and the agent finds the cause in the code.
+- **Stop it:** Ctrl+C the script. The fault then stops, and the alert clears about 5 to 7 minutes later. Nothing is stored (the subscribe never succeeds).
 
 ## Run the tests
 
