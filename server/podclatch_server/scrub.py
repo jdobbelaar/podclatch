@@ -11,7 +11,8 @@ What it does to the text of an exception and of every exception in its `__cause_
    `register_secrets`) are replaced by `[redacted]` wherever they appear, inside longer strings too.
 2. Every URL of any scheme is reduced to `scheme://host`: userinfo, port, path, query string, and
    fragment are dropped.
-3. `Authorization:` header text, and `Bearer` or `Basic` values, become `[redacted]`.
+3. The value of `Authorization:` and similar header text (also quoted, as in a dict or JSON repr),
+   and `Bearer` or `Basic` values, become `[redacted]`. Bracketed IPv6 hosts are kept as hosts.
 4. Runs of `OPAQUE_MIN_CHARS` or more characters of `[A-Za-z0-9_-]` (and padded base64) become
    `[redacted]`.
 5. The result is cut to `MAX_CHARS` characters, after scrubbing, with a visible marker.
@@ -37,9 +38,14 @@ MAX_CHAIN_DEPTH = 5
 MAX_FRAMES = 20
 SECRET_ENV_VARS = ("PODCLATCH_TOKEN", "TELEMETRY_GATEWAY_TOKEN")
 
-_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://[^\s'\"<>()\[\]{}`]*")
-_AUTH_HEADER = re.compile(r"(?i)\bauthorization\b\s*[:=]\s*[^\r\n]*")
-_BEARER_BASIC = re.compile(r"(?i)\b(bearer|basic)\s+[^\s'\",;]+")
+_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*://(?:\[[^\]\s]*\]|[^\s'\"<>()\[\]{}`])*")
+# A header name (optionally quoted, as in a dict or JSON repr), a colon or equals sign, then the
+# value: a quoted string or the rest of the line.
+_AUTH_HEADER = re.compile(
+    r"(?i)\b(authorization|proxy-authorization|x-api-key|x-auth-token|api[-_]?key|set-cookie|cookie)"
+    r"""["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\r\n]*)"""
+)
+_BEARER_BASIC = re.compile(r"(?i)\b(?:bearer|basic)(?:\s*[:=]\s*|\s+)[^\s'\",;}]+")
 _OPAQUE = re.compile(rf"(?<![A-Za-z0-9_\-])[A-Za-z0-9_\-]{{{OPAQUE_MIN_CHARS},}}")
 _BASE64_PADDED = re.compile(r"[A-Za-z0-9+/]{16,}={1,2}")
 
@@ -84,7 +90,7 @@ def _scrub(text: str) -> str:
     for secret in _known_secrets():
         text = text.replace(secret, REDACTED)
     text = _URL.sub(_reduce_url, text)
-    text = _AUTH_HEADER.sub(f"Authorization: {REDACTED}", text)
+    text = _AUTH_HEADER.sub(lambda m: f"{m.group(1)}: {REDACTED}", text)
     text = _BEARER_BASIC.sub(REDACTED, text)
     text = _BASE64_PADDED.sub(REDACTED, text)
     return _OPAQUE.sub(REDACTED, text)

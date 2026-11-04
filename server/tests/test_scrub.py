@@ -57,6 +57,30 @@ def test_secret_is_absent_from_the_message(text, secret):
     assert secret not in scrub_exception(ValueError(text)).stacktrace
 
 
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ("at http://[::1]:80/SEKRET21 failed", "SEKRET21"),
+        ("at http://user:pw@[2001:db8::1]:8080/p/SEKRET22?t=SEKRET23#SEKRET24 x", "SEKRET2"),
+        ('{"Authorization": "Token SEKRET14"}', "SEKRET14"),
+        ("headers={'authorization':'SEKRET15'}", "SEKRET15"),
+        ("Bearer: SEKRET12 rejected", "SEKRET12"),
+        ("bearer=SEKRET13", "SEKRET13"),
+        ("X-Api-Key: SEKRET16", "SEKRET16"),
+        ("{'x-api-key': 'SEKRET17', 'Cookie': 'sid=SEKRET18'}", "SEKRET1"),
+    ],
+)
+def test_ipv6_urls_and_quoted_header_forms_do_not_leak(text, secret):
+    assert secret not in message(ValueError(text))
+
+
+def test_ipv6_host_is_kept_and_the_rest_of_the_message_survives():
+    out = message(ValueError("at http://[::1]:80/SEKRET21 failed"))
+    assert out == "ValueError: at http://[::1] failed"
+    quoted = message(ValueError("""{"Authorization": "Token X1", "Accept": "text/xml"}"""))
+    assert '"Accept": "text/xml"' in quoted
+
+
 def test_url_is_reduced_to_scheme_and_host():
     out = message(ValueError("fetch https://user:pw@example.com:8443/a/b?token=SECRET123#f failed"))
     assert out == "ValueError: fetch https://example.com failed"
