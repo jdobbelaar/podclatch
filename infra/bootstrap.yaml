@@ -5,11 +5,17 @@ Description: >-
   by the human with admin credentials. Stack name: podclatch-bootstrap.
 
 Parameters:
-  GitHubRepository:
+  GitHubSubjectPrefix:
     Type: String
-    Default: jdobbelaar/podclatch
-    AllowedPattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
-    Description: The one GitHub repository (owner/name) whose workflows may assume the deploy role.
+    Default: "repo:jdobbelaar@7696911/podclatch@1422992323"
+    AllowedPattern: "^repo:[A-Za-z0-9_.@-]+(/[A-Za-z0-9_.@-]+)?$"
+    Description: >-
+      The start of the OIDC subject (sub) claim of the one repository whose workflows may assume the
+      deploy role; ":environment:dev" or ":environment:production" is added to it. It must match what
+      GitHub sends, which depends on the repository: run
+      `gh api repos/<owner>/<name>/actions/oidc/customization/sub` and use `sub_claim_prefix` when
+      `use_immutable_subject` is true (the form with numeric owner and repository IDs, used by newer
+      repositories), and `repo:<owner>/<name>` otherwise. No wildcards are allowed.
   CreateOidcProvider:
     Type: String
     Default: "true"
@@ -77,8 +83,8 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 token.actions.githubusercontent.com:sub:
-                  - !Sub "repo:${GitHubRepository}:environment:dev"
-                  - !Sub "repo:${GitHubRepository}:environment:production"
+                  - !Sub "${GitHubSubjectPrefix}:environment:dev"
+                  - !Sub "${GitHubSubjectPrefix}:environment:production"
       Policies:
         - PolicyName: push-and-retag-images
           PolicyDocument:
