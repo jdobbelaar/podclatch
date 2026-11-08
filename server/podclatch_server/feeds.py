@@ -30,7 +30,6 @@ _ITUNES = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
 _CONTENT = "{http://purl.org/rss/1.0/modules/content/}"
 _AUDIO_EXTENSIONS = (".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".flac")
 _DURATION_RE = re.compile(r"[0-9]+(?::[0-9]+){0,2}")
-_FRACTIONAL_DURATION_RE = re.compile(r"[0-9]+(?::[0-9]+){1,2}\.[0-9]+")
 
 
 class FeedError(Exception):
@@ -346,11 +345,6 @@ def _pick_audio_url(enclosures: list[tuple[str, str]]) -> str | None:
 def _parse_duration(value: str) -> int | None:
     """Accept `90`, `12:34`, `1:02:03` only; anything else is None (the episode is kept)."""
     value = value.strip()
-    if _FRACTIONAL_DURATION_RE.fullmatch(value):
-        raise ValueError(
-            "itunes:duration with fractional seconds is not handled "
-            f"(shape H:MM:SS.fff, value {value!r})"
-        )
     if not _DURATION_RE.fullmatch(value):
         return None
     total = 0
