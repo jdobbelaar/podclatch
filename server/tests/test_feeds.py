@@ -250,6 +250,13 @@ def test_duration(raw, expected):
     assert feed.episodes[0].duration_sec == expected
 
 
+def test_huge_duration_digits_keep_the_episode():
+    raw = "9" * 5000
+    feed = parse_feed(rss(item(extra=f"<itunes:duration>{raw}</itunes:duration>")))
+    assert len(feed.episodes) == 1
+    assert feed.episodes[0].duration_sec is None
+
+
 def test_missing_duration_is_none():
     assert parse_feed(rss(item())).episodes[0].duration_sec is None
 
