@@ -553,7 +553,7 @@ The server in `docker-compose.yaml` listens on `127.0.0.1:8180` only, so a phone
    { "src": ["autogroup:member"], "dst": ["tag:podclatch-laptop"], "ip": ["tcp:443"] }
    ```
 
-3. On the laptop, in the repository root with the stack running (PowerShell; if `tailscale` is not found in an old terminal, open a new one or use `& 'C:\Program Files\Tailscale	ailscale.exe'`):
+3. On the laptop, in the repository root with the stack running (PowerShell; if `tailscale` is not found in an old terminal, open a new one or use `& 'C:\Program Files\Tailscale\tailscale.exe'`):
 
    ```powershell
    tailscale serve --bg --https=443 http://127.0.0.1:8180
