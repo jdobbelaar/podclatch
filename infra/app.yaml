@@ -1,8 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  PodClatch server for one environment: the server image on AWS App Runner (HTTPS address, no
-  domain), PostgreSQL on RDS (TLS forced), and the access token, database password, and database
-  URL in Secrets Manager. Deploy as podclatch-dev or podclatch-prod from this one file.
+  PodClatch server for one environment: the server image on Amazon ECS Express Mode (Fargate behind
+  a managed load balancer, HTTPS address, no domain), PostgreSQL on RDS (TLS forced), and the access
+  token, database password, and database URL in Secrets Manager. Deploy as podclatch-dev or
+  podclatch-prod from this one file.
 
 Parameters:
   Environment:
@@ -12,7 +13,7 @@ Parameters:
   ImageTag:
     Type: String
     Default: ""
-    Description: The tag of the server image App Runner watches. Empty means the environment name (dev or prod).
+    Description: The tag of the server image the service first starts with. Empty means the environment name (dev or prod). The pipeline later points the service at a commit-SHA tag.
   EcrRepositoryName:
     Type: String
     Default: podclatch-server
@@ -66,8 +67,9 @@ Resources:
             - !GetAtt DatabaseProd.Endpoint.Address
             - !GetAtt DatabaseDev.Endpoint.Address
 
-  # ---- Database: public on purpose (App Runner without a VPC connector has no fixed addresses),
-  # protected by forced TLS and the generated password. See infra/README.md.
+  # ---- Database: public on purpose (the service's tasks run in public subnets and get public
+  # addresses that change, so there is no fixed address to allow), protected by forced TLS and the
+  # generated password. See infra/README.md.
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -146,32 +148,22 @@ Resources:
       DeletionProtection: false
       AutoMinorVersionUpgrade: true
 
-  # ---- App Runner: roles, then the service.
-  AccessRole:
+  # ---- ECS Express Mode: two roles, then the service. The role names are fixed because the
+  # bootstrap stack's deploy role is allowed to pass exactly these two roles to ECS (iam:PassRole).
+  ExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      Description: Lets App Runner pull the server image from ECR.
+      RoleName: !Sub "podclatch-${Environment}-ecs-execution"
+      Description: Lets ECS pull the server image from ECR, write its logs, and inject its two runtime secrets as environment variables.
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              Service: build.apprunner.amazonaws.com
+              Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
       ManagedPolicyArns:
-        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess"
-
-  InstanceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Description: Lets the running server read its own two runtime secrets, and nothing else.
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: tasks.apprunner.amazonaws.com
-            Action: sts:AssumeRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
       Policies:
         - PolicyName: read-runtime-secrets
           PolicyDocument:
@@ -183,52 +175,57 @@ Resources:
                   - !Ref TokenSecret
                   - !Ref DatabaseUrlSecret
 
+  InfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "podclatch-${Environment}-ecs-infrastructure"
+      Description: Lets ECS Express Mode create and manage the load balancer, certificate, security groups, and scaling for the service.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices"
+
   Service:
-    Type: AWS::AppRunner::Service
+    Type: AWS::ECS::ExpressGatewayService
     Properties:
       ServiceName: !Sub "podclatch-${Environment}"
-      SourceConfiguration:
-        AutoDeploymentsEnabled: true
-        AuthenticationConfiguration:
-          AccessRoleArn: !GetAtt AccessRole.Arn
-        ImageRepository:
-          ImageRepositoryType: ECR
-          ImageIdentifier: !Sub
-            - "${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${EcrRepositoryName}:${Tag}"
-            - Tag: !If [UseDefaultTag, !Ref Environment, !Ref ImageTag]
-          ImageConfiguration:
-            Port: "8000"
-            RuntimeEnvironmentVariables:
-              - Name: REFRESH_INTERVAL_HOURS
-                Value: !Ref RefreshIntervalHours
-              - Name: LOG_LEVEL
-                Value: INFO
-            RuntimeEnvironmentSecrets:
-              - Name: PODCLATCH_TOKEN
-                Value: !Ref TokenSecret
-              - Name: DATABASE_URL
-                Value: !Ref DatabaseUrlSecret
-      InstanceConfiguration:
-        Cpu: "256" # 0.25 vCPU, the smallest size
-        Memory: "512" # 0.5 GB, the smallest size
-        InstanceRoleArn: !GetAtt InstanceRole.Arn
-      HealthCheckConfiguration:
-        Protocol: HTTP
-        Path: /healthz
-        Interval: 10
-        Timeout: 5
-        HealthyThreshold: 1
-        UnhealthyThreshold: 5
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      InfrastructureRoleArn: !GetAtt InfrastructureRole.Arn
+      Cpu: "256" # 0.25 vCPU, the smallest Fargate size
+      Memory: "512" # 0.5 GB, the smallest Fargate size
+      HealthCheckPath: /healthz
       NetworkConfiguration:
-        IngressConfiguration:
-          IsPubliclyAccessible: true
+        Subnets: !Ref SubnetIds # public subnets, so the tasks get public addresses and the load balancer is internet-facing
+      ScalingTarget:
+        MinTaskCount: 1
+        MaxTaskCount: 1 # one task: the server runs its own scheduled Refresh, so two copies would repeat it
+      PrimaryContainer:
+        Image: !Sub
+          - "${AWS::AccountId}.dkr.ecr.${AWS::Region}.${AWS::URLSuffix}/${EcrRepositoryName}:${Tag}"
+          - Tag: !If [UseDefaultTag, !Ref Environment, !Ref ImageTag]
+        ContainerPort: 8000
+        Environment:
+          - Name: REFRESH_INTERVAL_HOURS
+            Value: !Ref RefreshIntervalHours
+          - Name: LOG_LEVEL
+            Value: INFO
+        Secrets:
+          - Name: PODCLATCH_TOKEN
+            ValueFrom: !Ref TokenSecret
+          - Name: DATABASE_URL
+            ValueFrom: !Ref DatabaseUrlSecret
 
 Outputs:
   ServiceUrl:
     Description: The HTTPS address of the server. Type it into the app as the server URL.
-    Value: !Sub "https://${Service.ServiceUrl}"
+    Value: !GetAtt Service.Endpoint # already starts with https://
   ServiceArn:
-    Description: The App Runner service (for pause, resume, and describe).
+    Description: The ECS Express Mode service (the pipeline updates it to move to a new image).
     Value: !GetAtt Service.ServiceArn
   TokenSecretArn:
     Description: The secret that holds the access token (the README shows how to read it).

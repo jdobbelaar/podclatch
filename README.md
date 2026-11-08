@@ -113,10 +113,12 @@ flowchart LR
   Push["Push to main"] --> CI["Server CI passes"]
   CI --> Deploy["Deploy workflow"]
   Deploy -- "push image: commit SHA and dev tags" --> ECR[("Amazon ECR podclatch-server")]
-  ECR -- "App Runner watches the dev tag" --> Dev["App Runner podclatch-dev"]
+  Deploy -- "update the service to the SHA image" --> Dev["ECS Express Mode podclatch-dev"]
+  ECR -- "service pulls the image" --> Dev
   Dev --> DevDb[("RDS PostgreSQL")]
   Promote["Promote workflow (manual)"] -- "retag the dev image as prod" --> ECR
-  ECR -- "App Runner watches the prod tag" --> Prod["App Runner podclatch-prod"]
+  Promote -- "update the service to the same image" --> Prod["ECS Express Mode podclatch-prod"]
+  ECR -- "service pulls the image" --> Prod
   Prod --> ProdDb[("RDS PostgreSQL")]
 ```
 
@@ -503,34 +505,36 @@ All workflows are in `.github/workflows/`.
 | Infra CI (`infra-ci.yml`) | Pull requests and pushes to `main` that touch `infra/` | `cfn-lint` and the template tests |
 | Scripts CI (`scripts-ci.yml`) | Pull requests and pushes to `main` that touch `.github/scripts/` | Unit tests of the deploy helper |
 | End-to-end test (`e2e.yml`) | Pushes to `main`, and by hand | Runs `make test-e2e` on an emulator on a Linux runner (about 10 to 25 minutes) |
-| Deploy (`deploy.yml`) | After Server CI succeeds on a push to `main` | Builds the server image once, pushes it to ECR tagged with the commit SHA and `dev`, waits for App Runner to deploy it, and checks `/healthz` |
-| Promote (`promote.yml`) | By hand only | Moves the `prod` tag to the image that currently carries `dev` (no rebuild), waits for App Runner, and checks `/healthz` |
+| Deploy (`deploy.yml`) | After Server CI succeeds on a push to `main` | Builds the server image once, pushes it to ECR tagged with the commit SHA and `dev`, points the ECS Express Mode service at the SHA image, waits for the deployment to finish, and checks `/healthz` |
+| Promote (`promote.yml`) | By hand only | Moves the `prod` tag to the image that currently carries `dev` (no rebuild), points the service at that image, waits for the deployment to finish, and checks `/healthz` |
 | Release APK (`release-apk.yml`) | When a tag starting with `v` is pushed | Builds a signed release APK and attaches it to a GitHub Release |
 
 **Until you configure AWS, Deploy and Promote are skipped, not failed.** Their jobs only run when the repository variable `AWS_DEPLOY_ROLE_ARN` is set (and, for Promote, `PROD_URL`), so `main` stays green. The AWS login uses GitHub's OpenID Connect, so no AWS key is stored anywhere. **Release APK** fails on purpose, with a clear message, if a tag is pushed without the signing secrets.
 
-What the author sets up once (the exact steps are in the comments at the top of each workflow file, and the `TODO(human)` items in [Deployment](#deployment) and [Get the app](#get-the-app)):
+What the author sets up once (the exact steps are in the comments at the top of each workflow file, and the `TODO(human)` items in [Get the app](#get-the-app)):
 
 - In Settings, Environments, create `dev` and `production`, and for both limit "Deployment branches and tags" to `main`.
 - In Settings, Secrets and variables, Actions, add the repository variables `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `DEV_URL`, and `PROD_URL`.
 - For signed releases, add the four repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`.
 
-**Rolling back.** Promote refuses any image that is not the one currently tagged `dev`, so it cannot be pointed at an older image. To roll back, revert the change on `main`, let Deploy run (that puts the reverted code on `dev`), and then run Promote. Two more limits of the deploy check: if App Runner rolls a failed deploy back by itself, the pipeline cannot see it, and pushing an image identical to the running one starts no deployment.
+**Rolling back.** Promote refuses any image that is not the one currently tagged `dev`, so it cannot be pointed at an older image. To roll back, revert the change on `main`, let Deploy run (that puts the reverted code on `dev`), and then run Promote. Two more limits of the deploy check: if ECS rolls a failed deploy back by itself, the pipeline may report the old image as healthy, and pointing the service at the image it already runs starts no deployment.
 
 ## Deployment
 
-**Not deployed yet.** The deployed server's address will go here once it exists, and the app has so far been run only against local servers.
+**Deployed to `dev` on 2026-11-08** in the author's AWS account (`us-east-1`): `https://po-aac25f44f7414515a82e9ca2fcf84e02.ecs.us-east-1.on.aws`. It is a throw-away demo that is deleted after grading, so the address stops working then.
 
-`TODO(human)`: deploy `dev` and put its address here. The steps, with every command, are in [infra/README.md](infra/README.md): create the AWS account setup and a budget alert (section 2), run the bootstrap stack (section 3), push the first image (section 4), deploy the `podclatch-dev` stack (section 5), and read the access token (section 6). Then replace this paragraph with the `ServiceUrl` output (an `https://...awsapprunner.com` address), confirm `curl -i <ServiceUrl>/healthz` returns 200, and set the repository variables named under CI/CD so Deploy stops being skipped.
+Checked from a laptop against that address: `GET /healthz` returns 200 with `{"status":"ok"}`; `GET /v1/feeds` returns 401 without the token, 401 with a wrong token, and 200 with the real one (read from Secrets Manager, never written down). The pipeline's update step was also run against the live service: pointing it at a new image kept the environment variables, both secrets, and the size, and the deployment finished in about 7 minutes (Express Mode rolls out in stages).
+
+The first attempt used AWS App Runner and failed, because AWS no longer lets new accounts create App Runner services; the design now uses ECS Express Mode (issue #136). To deploy again, follow [infra/README.md](infra/README.md): the account setup and budget alert (section 2), the bootstrap stack (section 3), the first image (section 4), and the `podclatch-dev` stack (section 5).
 
 What the templates build, so you know what you are agreeing to:
 
-- **Shape.** The server runs on AWS App Runner, which gives an HTTPS address with a valid certificate and no domain name, and the data lives in Amazon RDS for PostgreSQL (`db.t4g.micro`, one Availability Zone, 20 GB). The three secrets (the access token, the database password, and the database URL) live in AWS Secrets Manager. There are two stacks from one template, `podclatch-dev` and `podclatch-prod`.
-- **Cost.** About **22 to 29 US dollars per month per environment** while it runs. This is an estimate from list prices, not checked against a bill. The cheapest path is to deploy `dev` only, for the demo and grading, and tear it down afterwards (section 10 of `infra/README.md`). `prod` is written and checked but need not be deployed.
-- **HTTPS is required.** A release build of the app refuses plain `http://` to any address other than `localhost`, `127.0.0.1`, and `10.0.2.2`, which is why a load balancer or a bare server address would not work with it.
-- **The database is reachable from the internet.** App Runner without a private network has no fixed outbound addresses, so the database allows connections from anywhere, protected by forced TLS and a long generated password. This is a demo trade-off for a single-user, throw-away deployment, not something to leave running.
-- **Idle CPU is throttled.** App Runner slows an idle instance's CPU, so the server's own scheduled Refresh may not run until a request arrives. The pull-down Refresh in the app works.
-- **Nothing has been deployed by an agent**, and the templates were checked only with static tools (`cfn-lint` and tests), with no AWS account.
+- **Shape.** The server runs on Amazon ECS Express Mode (one Fargate task behind a managed load balancer), which gives an HTTPS address with a valid certificate and no domain name, and the data lives in Amazon RDS for PostgreSQL (`db.t4g.micro`, one Availability Zone, 20 GB). The three secrets (the access token, the database password, and the database URL) live in AWS Secrets Manager. There are two stacks from one template, `podclatch-dev` and `podclatch-prod`.
+- **Cost.** About **58 to 62 US dollars per month** (about 2 dollars a day) for `dev` while it runs, most of it the load balancer, the public IPv4 addresses, and the database. This is an estimate from list prices, not checked against a bill. App Runner would have cost less, but AWS closed it to new accounts. The cheapest path is to deploy `dev` only, for the demo and grading, and tear it down afterwards (section 10 of `infra/README.md`). `prod` is written and checked but need not be deployed.
+- **HTTPS is required.** A release build of the app refuses plain `http://` to any address other than `localhost`, `127.0.0.1`, and `10.0.2.2`, which is why a bare server address would not work with it. Express Mode's managed load balancer supplies the certificate.
+- **The database is reachable from the internet.** The service's tasks run in public subnets and get public addresses that change, so the database allows connections from anywhere, protected by forced TLS and a long generated password. This is a demo trade-off for a single-user, throw-away deployment, not something to leave running.
+- **Always on, one task.** The service runs a single task all the time, so the server's own scheduled Refresh runs; the cost above is for leaving it running.
+- **How it was deployed.** The author ran the deploy commands in their own AWS account, and an agent prepared the templates and checked the result with read-only commands and one update of the running service. The templates are also checked statically (`cfn-lint` and tests) in Infra CI, with no AWS account.
 
 ## Get the app
 
@@ -598,9 +602,9 @@ These are deliberate trade-offs for a single-user app, recorded so they are not 
 - **One user, one server.** There are no accounts, only one access token, and the app talks to exactly one server. Changing the server clears the local cache and downloads.
 - **HTTPS for a release build.** A release build refuses plain `http://` to any address other than `localhost`, `127.0.0.1`, and `10.0.2.2`. A server on a LAN address over `http://` works in a debug build only.
 - **Android 17 and the local network.** On Android 17 (API 37) and newer, connecting to a private-network address needs the "Local network access" permission, which the app asks for. If you refuse it, servers on the local network will not work (the `adb reverse` path to `127.0.0.1` is not affected).
-- **The deployed server may delay the scheduled Refresh.** App Runner throttles an idle instance's CPU, so the 3-hourly Refresh may wait until a request arrives.
+- **The deployed server costs about 2 dollars a day.** It runs one task behind a load balancer all the time and cannot be paused, only deleted (see Deployment and section 10 of `infra/README.md`).
 - **The deployed database is open to the internet.** It sits behind forced TLS and a long random password, which is a demo trade-off (see Deployment).
-- **Not deployed yet.** No deployed server, signed release, or demo against a deployed server exists until the author provides them (see the `TODO(human)` items).
+- **The deployed server is temporary, and the signed release and phone demo are not done.** The `dev` server runs only until grading (see Deployment). A signed release APK and a demo of the phone app against the deployed server exist only if the author provides them (see the `TODO(human)` items).
 - **Features left out on purpose.** There is no sleep timer, no OPML import or export, and no Storage screen (specification sections 8 and 9), no manual Queue editing, and no video podcasts. The server never proxies, caches, or stores podcast audio.
 - **Android Auto is unverified on a head unit.** It was tested through the service and on an emulator only (see Android Auto).
 - **The demo has no sound.** The screen recording comes from a silent emulator, and the demo Episodes are generated tones.
