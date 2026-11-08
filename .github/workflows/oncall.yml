@@ -10,7 +10,8 @@ name: On-call agent
 # Jobs (least privilege; the agent never holds a token that can push or open a pull request):
 #   gate      validates the payload, applies the kill switch, and checks the duplicate and rate limits
 #   diagnose  runs the agent (contents: read). Holds ANTHROPIC_API_KEY and TELEMETRY_GATEWAY_TOKEN
-#             in the one step that runs the agent
+#             in the one step that runs the agent. For check and run it first joins the tailnet
+#             (tailscale/github-action) using only the TS_OAUTH_* secrets
 #   open-pr   applies the validated patch to a new branch and opens the pull request (no agent, no key)
 #
 # The alert payload and all telemetry are untrusted input: nothing from them is interpolated into a
@@ -188,6 +189,18 @@ jobs:
       - name: Dry run, build the prompt and the command
         if: needs.gate.outputs.action == 'dry-run'
         run: python3 ops/oncall/run_agent.py --payload oncall-out/payload.json --out oncall-out --dry-run
+
+      # Joins the tailnet so the runner can reach the laptop's gateway at TELEMETRY_URL (issue #119,
+      # README "Tunnel to the laptop with Tailscale"). Not in the dry run (no tunnel) and not in
+      # open-pr. The action's nodes are always ephemeral; the OAuth client may only mint auth keys
+      # for this tag. With TELEMETRY_URL unset (fixture mode) there is nothing to reach, so it is skipped.
+      - name: Join the tailnet
+        if: (needs.gate.outputs.action == 'check' || needs.gate.outputs.action == 'run') && vars.TELEMETRY_URL != ''
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:podclatch-runner
 
       - name: Check the telemetry gateway
         if: needs.gate.outputs.action == 'check'
