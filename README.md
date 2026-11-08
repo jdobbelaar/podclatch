@@ -430,7 +430,7 @@ Run the steps in order. Laptop commands are PowerShell, from the repository root
 
 1. **Install the client and sign in** (Windows): install from <https://tailscale.com/download>, sign in, and confirm with `tailscale status`. In the admin console (<https://login.tailscale.com/admin>), on the DNS page, make sure MagicDNS and HTTPS Certificates are enabled (`tailscale serve` uses HTTPS on your `*.ts.net` name).
 2. **Tags and access rules.** In the admin console open Access controls and add the contents of [`ops/oncall/tailnet-policy.example.json`](ops/oncall/tailnet-policy.example.json) to your policy file (merge the `tagOwners` and `grants` entries into what is there; do not delete your existing rules, and remove the default allow-all rule only if you understand what else relies on it). It declares two tags and exactly one grant: `tag:podclatch-runner` may reach `tag:podclatch-laptop` on `tcp:443`, and nothing else. Port 443 is the port `tailscale serve` listens on, not the gateway's 8380.
-3. **Tag the laptop.** Admin console, Machines, your laptop, Edit ACL tags, add `tag:podclatch-laptop`. (A tagged device is owned by the tag, not by you; to undo, remove the tag and re-authenticate the client.)
+3. **Tag the laptop.** Admin console, Machines, your laptop, Edit ACL tags, add `tag:podclatch-laptop`. (A tagged device is owned by the tag, not by you, so your own devices, such as your phone, cannot see or reach it until a grant allows them: see [Use the app on your phone over Tailscale](#use-the-app-on-your-phone-over-tailscale). To undo the tag, remove it and re-authenticate the client.)
 4. **Create the OAuth client.** Admin console, Settings, Trust credentials, Credential, OAuth. Give it only the scope `auth_keys` with write access, and choose the tag `tag:podclatch-runner`. Generate it and copy the client ID and secret straight into GitHub (next step); the secret cannot be shown again. Do not paste either into chat, an issue, or a file.
 5. **GitHub settings** (Settings, Secrets and variables, Actions; or `gh secret set NAME` and `gh variable set NAME`, which prompt for the value so it never lands in your shell history):
 
@@ -541,6 +541,30 @@ What the templates build, so you know what you are agreeing to:
 3. Download **podclatch-debug-apk**, which is a zip file (you must be signed in to GitHub, and artifacts are deleted after 14 days; push a commit or re-run the workflow to get a fresh one). Unzip it to get `app-debug.apk`.
 4. Install it: `adb install -r app-debug.apk` (add `-s <serial>` to pick a device), or copy the file to the phone, open it, and allow "Install unknown apps" for the app you opened it from.
 5. Open PodClatch and enter a server address and token. A debug build accepts plain `http://` to a server on your network; a server on the internet needs `https://`.
+
+#### Use the app on your phone over Tailscale
+
+The server in `docker-compose.yaml` listens on `127.0.0.1:8180` only, so a phone cannot reach it directly. Tailscale gives the phone a private, HTTPS address for the laptop's server without exposing anything to the internet. It works only while the laptop is on, awake, and running the stack; without the server the app still plays what it has downloaded (specification decision 22).
+
+1. Install Tailscale on the laptop and the phone and sign in with the same account on both, so they share one tailnet. In the admin console, DNS page, make sure MagicDNS and HTTPS Certificates are enabled.
+2. If the laptop carries `tag:podclatch-laptop` (the on-call demo setup above), add this grant to the policy under Access controls, `grants`. Without it a tagged laptop is hidden from your phone, and the phone's device list shows only the phone. `autogroup:member` means your own devices; `tcp:443` is the one port `tailscale serve` publishes:
+
+   ```json
+   { "src": ["autogroup:member"], "dst": ["tag:podclatch-laptop"], "ip": ["tcp:443"] }
+   ```
+
+3. On the laptop, in the repository root with the stack running (PowerShell; if `tailscale` is not found in an old terminal, open a new one or use `& 'C:\Program Files\Tailscale\tailscale.exe'`):
+
+   ```powershell
+   tailscale serve --bg --https=443 http://127.0.0.1:8180
+   tailscale serve status        # shows https://<laptop>.<tailnet>.ts.net (tailnet only)
+   ```
+
+   Never use `tailscale funnel` (it publishes to the whole internet), and do not point this at the telemetry gateway on 8380 or at Grafana on 3180. The server answers 401 to any request without the access token.
+4. In PodClatch on the phone, enter `https://<laptop>.<tailnet>.ts.net` and the access token (`PODCLATCH_TOKEN` in `.env`). Check it first in the phone's browser: `https://<laptop>.<tailnet>.ts.net/healthz` should answer 200.
+5. Stop sharing with `tailscale serve --https=443 off`.
+
+If the phone's installed app was built on this laptop (`./gradlew assembleDebug` in `android/`, with `JAVA_HOME` pointing at a JDK such as Android Studio's `jbr`), `adb install -r app/build/outputs/apk/debug/app-debug.apk` updates it in place and keeps its data. The APK from GitHub is signed with a different debug key, so installing it over that app fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; the only way through is to uninstall first, which deletes the app's local cache, downloads, and settings (subscriptions and Queue come back from the server on the next Sync).
 
 **Signed release APK.** None exists yet; the release link is pending. `TODO(human)`: create the signing key and the four repository secrets named under CI/CD (`keytool -genkeypair -v -keystore podclatch-release.jks -alias podclatch -keyalg RSA -keysize 4096 -validity 10000`, keep a backup of the file outside the repository, and add `ANDROID_KEYSTORE_BASE64` with the output of `base64 -w0 podclatch-release.jks`, or in PowerShell `[Convert]::ToBase64String([IO.File]::ReadAllBytes("podclatch-release.jks"))`), then run `git tag v0.1.0 && git push origin v0.1.0`. The Release APK workflow then attaches `podclatch-v0.1.0.apk` to a GitHub Release, and this paragraph can link to it. A release build needs an `https://` server.
 
