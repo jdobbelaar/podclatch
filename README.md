@@ -415,6 +415,60 @@ The fault is deliberate: it is seeded on purpose so the on-call agent has someth
 - **What you will see** (one run in a throwaway Compose project built from the demo branch; first 500 at 0:00): the alert rule was Pending 30 seconds later and Firing after 5 minutes 30 seconds, and the local receiver got the `firing` webhook. `docker compose logs server` shows the traceback ending in `ValueError: itunes:duration with fractional seconds is not handled (shape H:MM:SS.fff, value '01:02:03.500')`. Loki (`{service_name="podclatch-server"}`) has the access-log line `POST /v1/feeds ... 500` but not the exception text (the server deliberately never exports exception messages, decision #27). Tempo (`{ status = error }`) has a `POST /v1/feeds` trace with status Error, `error.type=ValueError`, and `http.response.status_code=500`. So the telemetry points to the route and the exception type, and the agent finds the cause in the code.
 - **Stop it:** Ctrl+C the script. The fault then stops, and the alert clears about 5 to 7 minutes later. Nothing is stored (the subscribe never succeeds).
 
+#### Tunnel to the laptop with Tailscale (US-38c, issue #119)
+
+The chosen tunnel is Tailscale (option A on #35): a private network ("tailnet") that only your own devices and the tagged runner join. Nothing is public. Facts below were checked against Tailscale's documentation on 2026-11-07; if the admin console differs, follow the console.
+
+**What is exposed, for how long, how to revoke.** Exposed: the `telemetry-gateway` only (read-only log, trace, and metric queries behind the bearer token and a path allowlist), reachable only from a GitHub runner that joined your tailnet with the tag `tag:podclatch-runner`, on one port. Not exposed: Grafana (3180, anonymous admin), Loki, Tempo, Prometheus, the server, and Postgres. It is up only while `tailscale serve` is running; the runner's node is ephemeral and disappears when its job ends (the OAuth credential, however, lives until you delete it). Revoke with section 8 below. `tailscale serve` shares inside the tailnet; never use `tailscale funnel`, which publishes to the whole internet.
+
+**Free-plan limits (Personal plan, from the pricing page):** up to 6 users, unlimited user devices, 50 tagged resources included, and 1,000 ephemeral-resource minutes per month; one check or demo run uses about a minute. The pricing page does not mention grants, OAuth clients, or Serve, so the admin console is the authority on those. Nothing here needs a paid plan as far as the documentation shows. Creating the account is the human's job.
+
+Run the steps in order. Laptop commands are PowerShell, from the repository root.
+
+1. **Install the client and sign in** (Windows): install from <https://tailscale.com/download>, sign in, and confirm with `tailscale status`. In the admin console (<https://login.tailscale.com/admin>), on the DNS page, make sure MagicDNS and HTTPS Certificates are enabled (`tailscale serve` uses HTTPS on your `*.ts.net` name).
+2. **Tags and access rules.** In the admin console open Access controls and add the contents of [`ops/oncall/tailnet-policy.example.json`](ops/oncall/tailnet-policy.example.json) to your policy file (merge the `tagOwners` and `grants` entries into what is there; do not delete your existing rules, and remove the default allow-all rule only if you understand what else relies on it). It declares two tags and exactly one grant: `tag:podclatch-runner` may reach `tag:podclatch-laptop` on `tcp:443`, and nothing else. Port 443 is the port `tailscale serve` listens on, not the gateway's 8380.
+3. **Tag the laptop.** Admin console, Machines, your laptop, Edit ACL tags, add `tag:podclatch-laptop`. (A tagged device is owned by the tag, not by you; to undo, remove the tag and re-authenticate the client.)
+4. **Create the OAuth client.** Admin console, Settings, Trust credentials, Credential, OAuth. Give it only the scope `auth_keys` with write access, and choose the tag `tag:podclatch-runner`. Generate it and copy the client ID and secret straight into GitHub (next step); the secret cannot be shown again. Do not paste either into chat, an issue, or a file.
+5. **GitHub settings** (Settings, Secrets and variables, Actions; or `gh secret set NAME` and `gh variable set NAME`, which prompt for the value so it never lands in your shell history):
+
+   | Kind | Name | Value |
+   |---|---|---|
+   | Secret | `TS_OAUTH_CLIENT_ID` | The client ID from step 4 |
+   | Secret | `TS_OAUTH_SECRET` | The client secret from step 4 |
+   | Secret | `TELEMETRY_GATEWAY_TOKEN` | The same value as in your local `.env` (generate with `openssl rand -hex 32` if unset, then `docker compose up -d telemetry-gateway`) |
+   | Variable | `TELEMETRY_URL` | `https://<laptop>.<tailnet>.ts.net` from step 6 (no path, no trailing slash) |
+   | Variable | `ONCALL_ENABLED` | `true` (the kill switch; set it just before the live run) |
+   | Secret | `ANTHROPIC_API_KEY` | A dedicated, spend-limited key (the live run only; the check does not need it) |
+   | Setting | Settings, Actions, General | Tick "Allow GitHub Actions to create and approve pull requests" (the live run only) |
+
+   The secret names `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET` are the ones `tailscale/github-action` examples use; the workflow must read exactly these names (see the note after step 7).
+6. **Start the stack, then the tunnel, pointing only at the gateway.**
+
+   ```powershell
+   make up
+   docker compose ps telemetry-gateway      # it must be running (published on 127.0.0.1:8380)
+   tailscale serve --bg --https=443 http://127.0.0.1:8380
+   tailscale serve status
+   ```
+
+   `tailscale serve status` prints the `https://<laptop>.<tailnet>.ts.net` address and shows that it proxies to `127.0.0.1:8380` and to nothing else. If anything else is listed, run `tailscale serve reset` and start again. Use that address for `TELEMETRY_URL`. Never serve 3180 (Grafana), the Loki, Tempo, or Prometheus ports, or the server's own port.
+7. **Check the connection (no agent, no Anthropic call).** Actions, "On-call agent", Run workflow, with `dry_run` off and `check_only` on (or `gh workflow run oncall.yml -f dry_run=false -f check_only=true`; needs `ONCALL_ENABLED=true`). The runner joins the tailnet as an ephemeral node tagged `tag:podclatch-runner`, then `python3 ops/oncall/query.py --check` must report HTTP 200 with the token and 401 without it. Put the run link in the PR or issue. You can also test from another tailnet device: `Invoke-WebRequest https://<laptop>.<tailnet>.ts.net/` should be refused by the grant (a device that is not `tag:podclatch-runner` has no access).
+
+   **The workflow must join the tailnet first.** The runner can only reach the laptop after a step using the official `tailscale/github-action` (inputs `oauth-client-id`, `oauth-secret`, and `tags: tag:podclatch-runner`) has run; that step is not in `.github/workflows/oncall.yml` yet, and adding it is tracked on #119. Until it lands, step 7 and the live run cannot pass.
+8. **Stop the tunnel and revoke.** Right after the demo:
+
+   ```powershell
+   tailscale serve reset                     # stop serving; the gateway is no longer reachable from the tailnet
+   gh variable delete ONCALL_ENABLED         # the kill switch off
+   gh variable delete TELEMETRY_URL
+   gh secret delete TELEMETRY_GATEWAY_TOKEN
+   gh secret delete TS_OAUTH_SECRET
+   gh secret delete TS_OAUTH_CLIENT_ID
+   gh secret delete ANTHROPIC_API_KEY
+   ```
+
+   Then in the admin console: delete the OAuth client (Settings, Trust credentials), remove the grant and the two tags from the policy file, and remove the laptop's tag. Finally rotate the gateway token locally: write a new `TELEMETRY_GATEWAY_TOKEN` in `.env` (or remove the line to make the gateway answer 503 to everything) and run `docker compose up -d telemetry-gateway`. To leave the tailnet entirely, run `tailscale down` or log out in the client. The OAuth client is the standing credential, so deleting it is the step that matters most.
+
 ## Run the tests
 
 | Command | Run from | What it covers | What it needs |
