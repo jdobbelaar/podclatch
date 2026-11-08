@@ -525,6 +525,8 @@ What the author sets up once (the exact steps are in the comments at the top of 
 
 Checked from a laptop against that address: `GET /healthz` returns 200 with `{"status":"ok"}`; `GET /v1/feeds` returns 401 without the token, 401 with a wrong token, and 200 with the real one (read from Secrets Manager, never written down). The pipeline's update step was also run against the live service: pointing it at a new image kept the environment variables, both secrets, and the size, and the deployment finished in about 7 minutes (Express Mode rolls out in stages).
 
+The debug app was also connected to it on an Android emulator on 2026-11-08: Test connection reported "Connected to" the address above, Save and continue opened the Queue, which synced on its own, and pressing Sync by hand moved "Last synced" forward (6:47:25 PM to 6:47:48 PM). The Queue and Feeds screens are empty because this server holds no subscriptions. A physical phone has not been used with it.
+
 The first attempt used AWS App Runner and failed, because AWS no longer lets new accounts create App Runner services; the design now uses ECS Express Mode (issue #136). To deploy again, follow [infra/README.md](infra/README.md): the account setup and budget alert (section 2), the bootstrap stack (section 3), the first image (section 4), and the `podclatch-dev` stack (section 5).
 
 What the templates build, so you know what you are agreeing to:
