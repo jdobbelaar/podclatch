@@ -76,7 +76,9 @@ def main() -> int:
         for run in runs.get("workflow_runs", []):
             if str(run["id"]) == args.run_id:
                 continue
-            jobs = gh_json("api", f"repos/{args.repo}/actions/runs/{run['id']}/jobs", "-f", "per_page=100")
+            # -X GET is required: `gh api` turns any call with -f into a POST, and GitHub answers 404.
+            jobs = gh_json("api", "-X", "GET", f"repos/{args.repo}/actions/runs/{run['id']}/jobs",
+                           "-f", "per_page=100")  # fmt: skip
             jobs_per_run.append(jobs.get("jobs", []))
     except (subprocess.CalledProcessError, ValueError, KeyError, AttributeError) as error:
         print(f"guard: could not read GitHub ({type(error).__name__}); failing closed")
