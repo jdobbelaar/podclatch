@@ -1,0 +1,13 @@
+{
+  "tagOwners": {
+    "tag:podclatch-runner": ["autogroup:admin"],
+    "tag:podclatch-laptop": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["tag:podclatch-runner"],
+      "dst": ["tag:podclatch-laptop"],
+      "ip": ["tcp:443"]
+    }
+  ]
+}
