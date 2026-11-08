@@ -110,39 +110,98 @@ class FakeClock:
 
 
 class WaitServiceTest(unittest.TestCase):
-    def wait(self, statuses, timeout=100, interval=10, grace=30):
+    def wait(self, statuses, timeout=100, interval=10, settle=0):
         fake = FakeClock()
         queue = list(statuses)
         lines = []
         ci_tools.wait_for_service(
             "podclatch-dev", lambda name: queue.pop(0) if len(queue) > 1 else queue[0],
-            timeout, interval, grace, sleep=fake.sleep, clock=fake.clock, log=lines.append,
+            timeout, interval, settle, sleep=fake.sleep, clock=fake.clock, log=lines.append,
         )
-        return lines
+        return lines, fake
 
-    def test_waits_for_the_deployment_to_start_and_finish(self):
-        lines = self.wait(["RUNNING", "OPERATION_IN_PROGRESS", "OPERATION_IN_PROGRESS", "RUNNING"])
-        self.assertEqual(lines[-1], "App Runner service podclatch-dev: RUNNING")
-        self.assertEqual(len(lines), 4)  # the first RUNNING (before the deployment began) did not count
+    def test_waits_for_the_deployment_to_finish(self):
+        lines, _ = self.wait(["IN_PROGRESS", "IN_PROGRESS", "COMPLETED"])
+        self.assertEqual(lines[-1], "ECS service podclatch-dev: COMPLETED")
+        self.assertEqual(len(lines), 3)
 
-    def test_continues_with_a_warning_when_no_deployment_is_seen(self):
-        lines = self.wait(["RUNNING"])
-        self.assertTrue(any(line.startswith("::warning::") for line in lines))
+    def test_settles_first_so_the_update_is_visible(self):
+        _, fake = self.wait(["COMPLETED"], settle=20)
+        self.assertEqual(fake.now, 20)
 
-    def test_failed_status_stops_at_once(self):
+    def test_failed_deployment_stops_at_once(self):
         with self.assertRaises(ci_tools.CiError) as raised:
-            self.wait(["OPERATION_IN_PROGRESS", "CREATE_FAILED"])
-        self.assertIn("CREATE_FAILED", str(raised.exception))
+            self.wait(["IN_PROGRESS", "FAILED"])
+        self.assertIn("FAILED", str(raised.exception))
 
     def test_missing_service_is_a_clear_error(self):
         with self.assertRaises(ci_tools.CiError) as raised:
             self.wait([None])
         self.assertIn("podclatch-dev", str(raised.exception))
 
-    def test_times_out_if_never_running(self):
+    def test_times_out_if_never_completed(self):
         with self.assertRaises(ci_tools.CiError) as raised:
-            self.wait(["OPERATION_IN_PROGRESS"], timeout=50)
+            self.wait(["IN_PROGRESS"], timeout=50)
         self.assertIn("Timed out", str(raised.exception))
+
+
+def described(status="ACTIVE", running=1, desired=1, deployments=(("PRIMARY", "COMPLETED"),)):
+    return {"services": [{
+        "status": status, "runningCount": running, "desiredCount": desired,
+        "deployments": [{"status": s, "rolloutState": r} for s, r in deployments],
+    }]}
+
+
+class SummarizeServiceTest(unittest.TestCase):
+    def test_no_service_is_none(self):
+        self.assertIsNone(ci_tools.summarize_service({"services": [], "failures": [{"reason": "MISSING"}]}))
+
+    def test_one_completed_deployment_with_all_tasks_running_is_completed(self):
+        self.assertEqual(ci_tools.summarize_service(described()), "COMPLETED")
+
+    def test_old_deployment_still_draining_is_in_progress(self):
+        both = described(deployments=(("PRIMARY", "COMPLETED"), ("ACTIVE", "COMPLETED")))
+        self.assertEqual(ci_tools.summarize_service(both), "IN_PROGRESS")
+
+    def test_primary_still_rolling_out_is_in_progress(self):
+        self.assertEqual(ci_tools.summarize_service(described(deployments=(("PRIMARY", "IN_PROGRESS"),))), "IN_PROGRESS")
+
+    def test_tasks_not_yet_running_is_in_progress(self):
+        self.assertEqual(ci_tools.summarize_service(described(running=0)), "IN_PROGRESS")
+
+    def test_failed_rollout_is_failed(self):
+        self.assertEqual(ci_tools.summarize_service(described(deployments=(("PRIMARY", "FAILED"),))), "FAILED")
+
+    def test_a_service_that_is_not_active_reports_its_status(self):
+        self.assertEqual(ci_tools.summarize_service(described(status="DRAINING")), "DRAINING")
+        self.assertIn("DRAINING", ci_tools.FAILED_STATUSES)
+
+    def test_deployments_without_a_rollout_state_are_judged_by_task_counts(self):
+        self.assertEqual(ci_tools.summarize_service(described(deployments=(("PRIMARY", None),))), "COMPLETED")
+
+
+class UpdateServiceTest(unittest.TestCase):
+    def test_updates_the_service_arn_with_only_the_image(self):
+        calls = []
+
+        def run(args):
+            calls.append(args)
+            return "123456789012\n" if args[0] == "sts" else "{}"
+
+        with unittest.mock.patch.dict("os.environ", {"AWS_REGION": "us-east-1"}):
+            ci_tools.update_service("podclatch-dev", "reg/podclatch-server:abc", run=run, log=lambda line: None)
+        update = calls[1]
+        self.assertEqual(update[:2], ["ecs", "update-express-gateway-service"])
+        self.assertEqual(
+            update[update.index("--service-arn") + 1],
+            "arn:aws:ecs:us-east-1:123456789012:service/default/podclatch-dev",
+        )
+        self.assertEqual(json.loads(update[update.index("--primary-container") + 1]), {"image": "reg/podclatch-server:abc"})
+
+    def test_a_missing_region_is_a_clear_error(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(ci_tools.CiError):
+                ci_tools.update_service("podclatch-dev", "x", run=lambda args: "")
 
 
 def images(*entries):

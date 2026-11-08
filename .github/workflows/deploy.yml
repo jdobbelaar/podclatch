@@ -1,7 +1,8 @@
 name: Deploy
 
 # Deploys to dev: after Server CI succeeds on a push to main, build the server image once, push it to ECR
-# as <sha> and dev, and verify the service. App Runner watches the dev tag and deploys the new image.
+# as <sha> and dev, point the ECS Express Mode service at the <sha> image, and verify the service. Express
+# Mode does not watch an image tag, so the explicit update is what starts the deployment.
 #
 # Trigger choice: `workflow_run` on "Server CI" rather than a reusable call, so Server CI stays unchanged
 # and a red main never deploys (the job requires conclusion == success and a push event). The run uses the
@@ -66,7 +67,12 @@ jobs:
           docker push "$image:$SHA"
           docker push "$image:dev"
 
-      - name: Wait for App Runner to deploy the new image
+      - name: Point the service at the new image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: python3 .github/scripts/ci_tools.py update-service --name "$SERVICE_NAME" --image "$REGISTRY/$ECR_REPOSITORY:$SHA"
+
+      - name: Wait for the deployment to finish
         run: python3 .github/scripts/ci_tools.py wait-service --name "$SERVICE_NAME" --timeout 900
 
       - name: Verify the health endpoint

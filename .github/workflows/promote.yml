@@ -47,6 +47,9 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
       - name: Choose the image (it must be running on dev)
         id: choose
         env:
@@ -70,7 +73,13 @@ jobs:
             --image-manifest "$manifest" --image-manifest-media-type "$media_type" > /dev/null
           echo "Promoted $SHA ($DIGEST) to prod."
 
-      - name: Wait for App Runner to deploy the new image
+      - name: Point the service at that image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHA: ${{ steps.choose.outputs.sha }}
+        run: python3 .github/scripts/ci_tools.py update-service --name "$SERVICE_NAME" --image "$REGISTRY/$ECR_REPOSITORY:$SHA"
+
+      - name: Wait for the deployment to finish
         run: python3 .github/scripts/ci_tools.py wait-service --name "$SERVICE_NAME" --timeout 900
 
       - name: Verify the health endpoint
