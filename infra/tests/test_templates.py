@@ -171,24 +171,28 @@ def test_database_url_requires_tls(app):
     assert "sslmode=require" in url
 
 
+def test_service_is_an_ecs_express_mode_service(app):
+    assert resources_of(app, "AWS::ECS::ExpressGatewayService").keys() == {"Service"}
+    # App Runner is closed to new accounts, so nothing may use it.
+    assert not any(r["Type"].startswith("AWS::AppRunner::") for r in app["Resources"].values())
+
+
 def test_service_gets_secrets_as_runtime_secrets_not_plain_variables(app):
-    config = app["Resources"]["Service"]["Properties"]["SourceConfiguration"]["ImageRepository"][
-        "ImageConfiguration"
-    ]
-    secret_names = {s["Name"] for s in config["RuntimeEnvironmentSecrets"]}
-    plain_names = {v["Name"] for v in config["RuntimeEnvironmentVariables"]}
+    service = app["Resources"]["Service"]["Properties"]
+    container = service["PrimaryContainer"]
+    secret_names = {s["Name"] for s in container["Secrets"]}
+    plain_names = {v["Name"] for v in container["Environment"]}
     assert secret_names == {"PODCLATCH_TOKEN", "DATABASE_URL"}
     assert not secret_names & plain_names
-    assert config["Port"] == "8000"
-    health = app["Resources"]["Service"]["Properties"]["HealthCheckConfiguration"]
-    assert health["Path"] == "/healthz"
+    assert container["ContainerPort"] == 8000
+    assert service["HealthCheckPath"] == "/healthz"
 
 
-def test_minimum_service_size(app):
-    instance = app["Resources"]["Service"]["Properties"]["InstanceConfiguration"]
-    assert (instance["Cpu"], instance["Memory"]) == ("256", "512")
-    source = app["Resources"]["Service"]["Properties"]["SourceConfiguration"]
-    assert source["AutoDeploymentsEnabled"] is True
+def test_minimum_service_size_and_a_single_task(app):
+    service = app["Resources"]["Service"]["Properties"]
+    assert (service["Cpu"], service["Memory"]) == ("256", "512")
+    # One task: the server runs its own scheduled Refresh, so a second copy would repeat it.
+    assert service["ScalingTarget"] == {"MinTaskCount": 1, "MaxTaskCount": 1}
 
 
 def test_only_the_database_is_public(bootstrap, app):
@@ -219,9 +223,6 @@ def test_https_only(app):
     out = app["Outputs"]["ServiceUrl"]["Value"]
     assert str(out).startswith("{'Fn::Sub': 'https://")
     assert not any(re.search(r"http://(?!127\.|localhost)", s) for s in strings(app))
-    assert app["Resources"]["Service"]["Properties"]["NetworkConfiguration"][
-        "IngressConfiguration"
-    ] == {"IsPubliclyAccessible": True}
 
 
 def test_dev_and_prod_differ_only_as_decided(app):
@@ -261,12 +262,32 @@ def test_app_outputs_and_names(app):
     }
 
 
-def test_instance_role_reads_only_its_two_secrets(app):
-    role = app["Resources"]["InstanceRole"]["Properties"]
+def test_execution_role_reads_only_the_two_runtime_secrets(app):
+    role = app["Resources"]["ExecutionRole"]["Properties"]
+    assert role["AssumeRolePolicyDocument"]["Statement"][0]["Principal"] == {
+        "Service": "ecs-tasks.amazonaws.com"
+    }
     statements = role["Policies"][0]["PolicyDocument"]["Statement"]
     assert len(statements) == 1
     assert statements[0]["Action"] == "secretsmanager:GetSecretValue"
     assert statements[0]["Resource"] == [{"Ref": "TokenSecret"}, {"Ref": "DatabaseUrlSecret"}]
+
+
+def test_express_role_names_match_what_the_deploy_role_may_pass(bootstrap, app):
+    """The bootstrap stack allows iam:PassRole on exactly these two name patterns."""
+    names = {
+        key: app["Resources"][key]["Properties"]["RoleName"]["Fn::Sub"]
+        for key in ("ExecutionRole", "InfrastructureRole")
+    }
+    assert names == {
+        "ExecutionRole": "podclatch-${Environment}-ecs-execution",
+        "InfrastructureRole": "podclatch-${Environment}-ecs-infrastructure",
+    }
+    statement = next(s for s in _role_statements(bootstrap) if s["Sid"] == "PassTheTwoExpressRolesToEcs")
+    patterns = [r["Fn::Sub"].split("role/")[1] for r in statement["Resource"]]
+    assert patterns == ["podclatch-*-ecs-execution", "podclatch-*-ecs-infrastructure"]
+    for name in names.values():
+        assert any(re.fullmatch(p.replace("*", "(dev|prod)"), name.replace("${Environment}", "dev")) for p in patterns)
 
 
 def test_bootstrap_outputs_and_names(bootstrap):
@@ -288,20 +309,35 @@ def _actions(statement):
     return [actions] if isinstance(actions, str) else actions
 
 
-def test_deploy_role_is_limited_to_ecr_and_app_runner_reads(bootstrap):
+def test_deploy_role_is_limited_to_ecr_and_ecs_express_updates(bootstrap):
     statements = _role_statements(bootstrap)
     assert len(bootstrap["Resources"]["DeployRole"]["Properties"]["Policies"]) == 1
     assert "ManagedPolicyArns" not in bootstrap["Resources"]["DeployRole"]["Properties"]
     all_actions = [a for s in statements for a in _actions(s)]
     for action in all_actions:
         assert "*" not in action
-        service = action.split(":")[0]
-        assert service in {"ecr", "apprunner"}, action
-        assert not action.startswith(("cloudformation:", "iam:", "rds:"))
-    apprunner = {a for a in all_actions if a.startswith("apprunner:")}
-    assert apprunner == {"apprunner:DescribeService", "apprunner:ListServices"}
+        assert action.split(":")[0] in {"ecr", "ecs", "iam"}, action
+        assert not action.startswith(("cloudformation:", "rds:", "apprunner:"))
+    # The only IAM permission is passing the two Express roles to ECS.
+    assert {a for a in all_actions if a.startswith("iam:")} == {"iam:PassRole"}
+    # The ECS write is limited to updating a service, never creating or deleting one.
+    assert {a for a in all_actions if a.startswith("ecs:") and not a.startswith(("ecs:Describe", "ecs:List"))} == {
+        "ecs:UpdateExpressGatewayService",
+        "ecs:RegisterTaskDefinition",
+    }
     wildcard_resources = {a for s in statements if s["Resource"] == "*" for a in _actions(s)}
-    assert wildcard_resources == {"ecr:GetAuthorizationToken", "apprunner:ListServices"}
+    assert wildcard_resources == {
+        "ecr:GetAuthorizationToken",
+        "ecs:RegisterTaskDefinition",
+        "ecs:DescribeTaskDefinition",
+    }
+    ecs_services = next(s for s in statements if s["Sid"] == "UpdateAndWatchExpressServices")
+    assert ecs_services["Resource"]["Fn::Sub"].endswith(":service/default/podclatch-*")
+    passrole = next(s for s in statements if s["Sid"] == "PassTheTwoExpressRolesToEcs")
+    assert passrole["Condition"]["StringEquals"]["iam:PassedToService"] == [
+        "ecs.amazonaws.com",
+        "ecs-tasks.amazonaws.com",
+    ]
     ecr_statement = next(s for s in statements if s["Sid"] == "PushPullAndRetagOneRepository")
     assert ecr_statement["Resource"] == {"Fn::GetAtt": ["EcrRepository", "Arn"]}
     for needed in ("ecr:PutImage", "ecr:BatchGetImage", "ecr:UploadLayerPart"):

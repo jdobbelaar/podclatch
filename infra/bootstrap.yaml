@@ -64,7 +64,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: podclatch-github-deploy
-      Description: Assumed by GitHub Actions for the dev and production environments. Pushes and retags images; reads App Runner.
+      Description: Assumed by GitHub Actions for the dev and production environments. Pushes and retags images, and points the ECS Express Mode services at a new image.
       MaxSessionDuration: 3600
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -100,14 +100,33 @@ Resources:
                   - ecr:PutImage
                   - ecr:UploadLayerPart
                 Resource: !GetAtt EcrRepository.Arn
-              - Sid: DescribeAppRunnerServices
+              - Sid: UpdateAndWatchExpressServices
                 Effect: Allow
-                Action: apprunner:DescribeService
-                Resource: !Sub "arn:${AWS::Partition}:apprunner:${AWS::Region}:${AWS::AccountId}:service/podclatch-*/*"
-              - Sid: ListAppRunnerServices
+                Action:
+                  - ecs:UpdateExpressGatewayService
+                  - ecs:DescribeExpressGatewayService
+                  - ecs:DescribeServices
+                  - ecs:DescribeServiceDeployments
+                  - ecs:DescribeServiceRevisions
+                  - ecs:ListServiceDeployments
+                Resource: !Sub "arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:service/default/podclatch-*"
+              - Sid: RegisterTaskDefinitions
                 Effect: Allow
-                Action: apprunner:ListServices
-                Resource: "*" # List calls do not support resource-level permissions
+                Action:
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DescribeTaskDefinition
+                Resource: "*" # Task definition actions do not support resource-level permissions
+              - Sid: PassTheTwoExpressRolesToEcs
+                Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/podclatch-*-ecs-execution"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/podclatch-*-ecs-infrastructure"
+                Condition:
+                  StringEquals:
+                    iam:PassedToService:
+                      - ecs.amazonaws.com
+                      - ecs-tasks.amazonaws.com
 
 Outputs:
   DeployRoleArn:
