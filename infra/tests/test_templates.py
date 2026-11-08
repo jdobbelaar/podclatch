@@ -220,8 +220,8 @@ def test_tls_is_forced_and_storage_encrypted(app):
 
 
 def test_https_only(app):
-    out = app["Outputs"]["ServiceUrl"]["Value"]
-    assert str(out).startswith("{'Fn::Sub': 'https://")
+    # The Express Mode Endpoint attribute already includes the https:// scheme, so the output must not add one.
+    assert app["Outputs"]["ServiceUrl"]["Value"] == {"Fn::GetAtt": ["Service", "Endpoint"]}
     assert not any(re.search(r"http://(?!127\.|localhost)", s) for s in strings(app))
 
 

@@ -5,7 +5,7 @@ Two CloudFormation templates put PodClatch Server on AWS behind an HTTPS address
 - `bootstrap.yaml` (stack `podclatch-bootstrap`, deployed once): the GitHub OIDC identity provider, the ECR repository `podclatch-server`, and a least-privilege role for the pipeline.
 - `app.yaml` (stacks `podclatch-dev` and `podclatch-prod`): the server on Amazon ECS Express Mode (Fargate behind a managed load balancer), PostgreSQL on RDS, and three secrets in Secrets Manager. One file, two stacks, chosen by the `Environment` parameter.
 
-**No agent has deployed anything, and none has AWS credentials.** The templates were only checked statically (`cfn-lint`, the tests in `infra/tests/`). You run every command below yourself, in an AWS account that is yours. Never run them against an account that is not yours.
+The templates are checked statically (`cfn-lint`, the tests in `infra/tests/`) and were deployed once to `dev` on 2026-11-08 (see the README, Deployment). You run every deploy command below yourself, in an AWS account that is yours; an agent should only read from the account. Never run them against an account that is not yours.
 
 Why ECS Express Mode: it gives a valid `https://<name>.ecs.<region>.on.aws` address, with a managed certificate and load balancer and no domain name work. The release build of the Android app refuses plain HTTP to anything but `localhost`, `127.0.0.1`, and `10.0.2.2`, so HTTPS is required. The design first used AWS App Runner, but AWS closed App Runner to new customers on 2026-04-30 (the first real deploy failed with "Account ... can't create new App Runner services"), and recommends Express Mode as the replacement. The cost of Express Mode is higher, because the load balancer is not free (see below).
 

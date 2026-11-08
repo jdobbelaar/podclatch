@@ -223,7 +223,7 @@ Resources:
 Outputs:
   ServiceUrl:
     Description: The HTTPS address of the server. Type it into the app as the server URL.
-    Value: !Sub "https://${Service.Endpoint}"
+    Value: !GetAtt Service.Endpoint # already starts with https://
   ServiceArn:
     Description: The ECS Express Mode service (the pipeline updates it to move to a new image).
     Value: !GetAtt Service.ServiceArn

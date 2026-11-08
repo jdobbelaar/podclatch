@@ -511,7 +511,7 @@ All workflows are in `.github/workflows/`.
 
 **Until you configure AWS, Deploy and Promote are skipped, not failed.** Their jobs only run when the repository variable `AWS_DEPLOY_ROLE_ARN` is set (and, for Promote, `PROD_URL`), so `main` stays green. The AWS login uses GitHub's OpenID Connect, so no AWS key is stored anywhere. **Release APK** fails on purpose, with a clear message, if a tag is pushed without the signing secrets.
 
-What the author sets up once (the exact steps are in the comments at the top of each workflow file, and the `TODO(human)` items in [Deployment](#deployment) and [Get the app](#get-the-app)):
+What the author sets up once (the exact steps are in the comments at the top of each workflow file, and the `TODO(human)` items in [Get the app](#get-the-app)):
 
 - In Settings, Environments, create `dev` and `production`, and for both limit "Deployment branches and tags" to `main`.
 - In Settings, Secrets and variables, Actions, add the repository variables `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `DEV_URL`, and `PROD_URL`.
@@ -521,9 +521,11 @@ What the author sets up once (the exact steps are in the comments at the top of 
 
 ## Deployment
 
-**Not deployed yet.** The deployed server's address will go here once it exists, and the app has so far been run only against local servers.
+**Deployed to `dev` on 2026-11-08** in the author's AWS account (`us-east-1`): `https://po-aac25f44f7414515a82e9ca2fcf84e02.ecs.us-east-1.on.aws`. It is a throw-away demo that is deleted after grading, so the address stops working then.
 
-`TODO(human)`: deploy `dev` and put its address here. The steps, with every command, are in [infra/README.md](infra/README.md): create the AWS account setup and a budget alert (section 2), run the bootstrap stack (section 3), push the first image (section 4), deploy the `podclatch-dev` stack (section 5), and read the access token (section 6). Then replace this paragraph with the `ServiceUrl` output (an `https://...ecs.us-east-1.on.aws` address), confirm `curl -i <ServiceUrl>/healthz` returns 200, and set the repository variables named under CI/CD so Deploy stops being skipped.
+Checked from a laptop against that address: `GET /healthz` returns 200 with `{"status":"ok"}`; `GET /v1/feeds` returns 401 without the token, 401 with a wrong token, and 200 with the real one (read from Secrets Manager, never written down). The pipeline's update step was also run against the live service: pointing it at a new image kept the environment variables, both secrets, and the size, and the deployment finished in about 7 minutes (Express Mode rolls out in stages).
+
+The first attempt used AWS App Runner and failed, because AWS no longer lets new accounts create App Runner services; the design now uses ECS Express Mode (issue #136). To deploy again, follow [infra/README.md](infra/README.md): the account setup and budget alert (section 2), the bootstrap stack (section 3), the first image (section 4), and the `podclatch-dev` stack (section 5).
 
 What the templates build, so you know what you are agreeing to:
 
@@ -532,7 +534,7 @@ What the templates build, so you know what you are agreeing to:
 - **HTTPS is required.** A release build of the app refuses plain `http://` to any address other than `localhost`, `127.0.0.1`, and `10.0.2.2`, which is why a bare server address would not work with it. Express Mode's managed load balancer supplies the certificate.
 - **The database is reachable from the internet.** The service's tasks run in public subnets and get public addresses that change, so the database allows connections from anywhere, protected by forced TLS and a long generated password. This is a demo trade-off for a single-user, throw-away deployment, not something to leave running.
 - **Always on, one task.** The service runs a single task all the time, so the server's own scheduled Refresh runs; the cost above is for leaving it running.
-- **Nothing has been deployed by an agent**, and the templates were checked only with static tools (`cfn-lint` and tests), with no AWS account.
+- **How it was deployed.** The author ran the deploy commands in their own AWS account, and an agent prepared the templates and checked the result with read-only commands and one update of the running service. The templates are also checked statically (`cfn-lint` and tests) in Infra CI, with no AWS account.
 
 ## Get the app
 
@@ -602,7 +604,7 @@ These are deliberate trade-offs for a single-user app, recorded so they are not 
 - **Android 17 and the local network.** On Android 17 (API 37) and newer, connecting to a private-network address needs the "Local network access" permission, which the app asks for. If you refuse it, servers on the local network will not work (the `adb reverse` path to `127.0.0.1` is not affected).
 - **The deployed server costs about 2 dollars a day.** It runs one task behind a load balancer all the time and cannot be paused, only deleted (see Deployment and section 10 of `infra/README.md`).
 - **The deployed database is open to the internet.** It sits behind forced TLS and a long random password, which is a demo trade-off (see Deployment).
-- **Not deployed yet.** No deployed server, signed release, or demo against a deployed server exists until the author provides them (see the `TODO(human)` items).
+- **The deployed server is temporary, and the signed release and phone demo are not done.** The `dev` server runs only until grading (see Deployment). A signed release APK and a demo of the phone app against the deployed server exist only if the author provides them (see the `TODO(human)` items).
 - **Features left out on purpose.** There is no sleep timer, no OPML import or export, and no Storage screen (specification sections 8 and 9), no manual Queue editing, and no video podcasts. The server never proxies, caches, or stores podcast audio.
 - **Android Auto is unverified on a head unit.** It was tested through the service and on an emulator only (see Android Auto).
 - **The demo has no sound.** The screen recording comes from a silent emulator, and the demo Episodes are generated tones.
