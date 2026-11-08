@@ -407,9 +407,12 @@ The fault is deliberate: it is seeded on purpose so the on-call agent has someth
 
   ```bash
   git worktree add ../podclatch-demo demo/seeded-fault   # once
-  cd ../podclatch-demo && cp /path/to/your/.env .env && make up
+  cd ../podclatch-demo && cp /path/to/your/.env .env && docker compose -p podclatch-demo up -d --build --wait
   bash ops/oncall/trigger-fault.sh                        # Ctrl+C to stop
+  docker compose -p podclatch-demo down -v                # afterwards: removes only the demo's volumes
   ```
+
+  Use `-p podclatch-demo`, not `make up`: `docker-compose.yaml` fixes `name: podclatch`, so `make up` in the demo checkout would run the fault server on your real Postgres volume. The demo stack needs the same host ports as your own, so run `docker compose stop` in your own checkout first (it keeps the containers and volumes) and `docker compose start` afterwards.
 
   It serves the fixture from a throwaway web server on `127.0.0.1:8480`, subscribes to it with the token from `.env` (read from the file, handed to curl on stdin, never printed) every 15 seconds, and prints only the HTTP status. It refuses any server URL whose host is not `localhost` or `127.0.0.1`. The server (in Docker) reaches the fixture through `host.docker.internal` (Docker Desktop); on Linux set `ONCALL_FIXTURE_HOST` to the host's address on the Docker network. Other knobs are listed at the top of the script (`ONCALL_SERVER_URL`, `ONCALL_FIXTURE_PORT`, `ONCALL_INTERVAL`, `ONCALL_MAX_REQUESTS`, `ONCALL_ENV_FILE`).
 - **What you will see** (one run in a throwaway Compose project built from the demo branch; first 500 at 0:00): the alert rule was Pending 30 seconds later and Firing after 5 minutes 30 seconds, and the local receiver got the `firing` webhook. `docker compose logs server` shows the traceback ending in `ValueError: itunes:duration with fractional seconds is not handled (shape H:MM:SS.fff, value '01:02:03.500')`. Loki (`{service_name="podclatch-server"}`) has the access-log line `POST /v1/feeds ... 500` but not the exception text (the server deliberately never exports exception messages, decision #27). Tempo (`{ status = error }`) has a `POST /v1/feeds` trace with status Error, `error.type=ValueError`, and `http.response.status_code=500`. So the telemetry points to the route and the exception type, and the agent finds the cause in the code.
