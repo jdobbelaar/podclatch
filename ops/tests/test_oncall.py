@@ -129,7 +129,50 @@ def test_secrets_only_in_the_steps_that_need_them(workflow, text):
     # Only the agent step and the gateway check use the gateway token; open-pr holds neither secret.
     assert "secrets." not in yaml.dump(workflow["jobs"]["open-pr"])
     assert "secrets." not in yaml.dump(workflow["jobs"]["gate"])
-    assert set(re.findall(r"secrets\.(\w+)", text)) <= {"ANTHROPIC_API_KEY", "TELEMETRY_GATEWAY_TOKEN"}
+    assert set(re.findall(r"secrets\.(\w+)", text)) <= {
+        "ANTHROPIC_API_KEY",
+        "TELEMETRY_GATEWAY_TOKEN",
+        "TS_OAUTH_CLIENT_ID",
+        "TS_OAUTH_SECRET",
+    }
+
+
+def test_tailscale_step_joins_the_tailnet_safely(workflow, text):
+    steps = workflow["jobs"]["diagnose"]["steps"]
+    names = [s.get("name") for s in steps]
+    ts = [s for s in steps if str(s.get("uses", "")).startswith("tailscale/github-action@")]
+    assert len(ts) == 1
+    step = ts[0]
+    assert re.fullmatch(r"tailscale/github-action@[0-9a-f]{40}", step["uses"])
+    assert "# v4." in next(line for line in text.splitlines() if "tailscale/github-action@" in line)
+    assert step["with"] == {
+        "oauth-client-id": "${{ secrets.TS_OAUTH_CLIENT_ID }}",
+        "oauth-secret": "${{ secrets.TS_OAUTH_SECRET }}",
+        "tags": "tag:podclatch-runner",
+    }
+    assert "env" not in step
+    # Only for check and run, never for the dry run.
+    cond = step["if"]
+    assert "'check'" in cond and "'run'" in cond and "dry-run" not in cond
+    # Before every step that calls the gateway.
+    join = steps.index(step)
+    assert join < names.index("Check the telemetry gateway")
+    assert join < names.index("Run the agent")
+    # Only in diagnose; the other jobs never see the Tailscale credentials or action.
+    for job in ("gate", "open-pr"):
+        dumped = yaml.dump(workflow["jobs"][job])
+        assert "tailscale" not in dumped.lower() and "TS_OAUTH" not in dumped
+    # The two TS secrets appear only in this step.
+    assert len(re.findall(r"secrets\.TS_OAUTH", text)) == 2
+    # Still no write token and no new permissions.
+    assert workflow["jobs"]["diagnose"]["permissions"] == {"contents": "read"}
+    assert workflow["permissions"] == {}
+
+
+def test_telemetry_url_still_masked(workflow):
+    for name in ("Check the telemetry gateway", "Run the agent"):
+        step = next(s for s in workflow["jobs"]["diagnose"]["steps"] if s.get("name") == name)
+        assert "::add-mask::${TELEMETRY_URL}" in step["run"]
 
 
 def test_kill_switch_and_no_merge(workflow, text):
