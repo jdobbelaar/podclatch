@@ -29,7 +29,7 @@ MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 _ITUNES = "{http://www.itunes.com/dtds/podcast-1.0.dtd}"
 _CONTENT = "{http://purl.org/rss/1.0/modules/content/}"
 _AUDIO_EXTENSIONS = (".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav", ".flac")
-_DURATION_RE = re.compile(r"[0-9]+(?::[0-9]+){0,2}")
+_DURATION_RE = re.compile(r"[0-9]{1,9}(?::[0-9]{1,9}){0,2}")
 
 
 class FeedError(Exception):

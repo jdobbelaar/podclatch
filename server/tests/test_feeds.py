@@ -242,6 +242,8 @@ def test_script_tags_are_sanitised():
         ("90.5", None),
         ("12:xx", None),
         ("12:", None),
+        ("9" * 5000, None),
+        ("1:" + "9" * 5000, None),
     ],
 )
 def test_duration(raw, expected):
