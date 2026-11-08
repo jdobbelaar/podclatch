@@ -497,6 +497,32 @@ def test_guard_rate_limit_counts_only_runs_that_reached_the_agent():
     assert skip and "rate limit" in reason
 
 
+def diagnose(conclusion, steps):
+    return [{"name": "gate", "conclusion": "success", "steps": [{"name": "x", "conclusion": "success"}]},
+            {"name": "diagnose", "conclusion": conclusion, "steps": steps}]  # fmt: skip
+
+
+def test_guard_counts_a_completed_diagnose_job_with_an_empty_step_list():
+    """Runs 42444647265 and 42444853675: diagnose succeeded but the jobs API returned steps=[]."""
+    assert guard.reached_agent(diagnose("success", []))
+    assert guard.reached_agent(diagnose("failure", []))
+    assert guard.reached_agent([{"name": "diagnose", "conclusion": "success"}])  # steps key missing
+    skip, reason = guard.decide([], [diagnose("success", [])] * 3, "s")
+    assert skip and "rate limit" in reason
+    # Run 42444853675 came back truncated: seven steps, none of them "Run the agent".
+    truncated = [{"name": "Validate the alert payload", "conclusion": "success"},
+                 {"name": "Post Run astral-sh/setup-uv", "conclusion": None}]  # fmt: skip
+    assert guard.reached_agent(diagnose("success", truncated))
+
+
+def test_guard_does_not_count_runs_where_diagnose_did_not_complete_or_agent_was_skipped():
+    skipped_steps = [{"name": guard.AGENT_STEP_NAME, "conclusion": "skipped"}]
+    assert not guard.reached_agent(diagnose("skipped", []))  # kill switch, duplicate, rate limit, resolved
+    assert not guard.reached_agent(diagnose("cancelled", []))
+    assert not guard.reached_agent([{"name": "gate", "conclusion": "success", "steps": []}])
+    assert not guard.reached_agent(diagnose("success", skipped_steps))  # dry_run or check_only, steps present
+
+
 # ---------------------------------------------------------------- run_agent.py
 
 

@@ -28,6 +28,7 @@ MAX_AGENT_RUNS = 3
 WINDOW_HOURS = 24
 WORKFLOW_FILE = "oncall.yml"
 AGENT_STEP_NAME = "Run the agent"
+DIAGNOSE_JOB_NAME = "diagnose"
 
 
 def has_open_pr(prs: list[dict], slug: str) -> bool:
@@ -36,12 +37,27 @@ def has_open_pr(prs: list[dict], slug: str) -> bool:
 
 
 def reached_agent(jobs: list[dict]) -> bool:
-    """True when the agent step ran to a result (success or failure), not skipped or cancelled."""
-    return any(
-        step.get("name") == AGENT_STEP_NAME and step.get("conclusion") in ("success", "failure")
-        for job in jobs
-        for step in job.get("steps", [])
-    )
+    """True when a prior run used an agent slot. Unknown counts as used (fail closed).
+
+    GitHub's jobs API can return an empty or truncated step list for a finished job (runs 42444647265
+    and 42444853675: empty, then a partial list with no "Run the agent" entry), which made the limit
+    fail open. So a run counts when:
+      - a step list shows the agent step ran to a result (success or failure), OR
+      - the `diagnose` job finished with success or failure and its step list does not show the agent
+        step at all (empty, missing, or truncated): unknown, so counted.
+    A run does not count when `diagnose` was skipped or cancelled (kill switch, duplicate, rate limit,
+    resolved), or when the step list shows the agent step skipped or cancelled (dry_run, check_only).
+    Consequence of failing closed: a dry_run or check_only run whose step list comes back without the
+    agent step is counted too.
+    """
+    for job in jobs:
+        agent_steps = [s for s in job.get("steps") or [] if s.get("name") == AGENT_STEP_NAME]
+        if agent_steps:
+            if any(s.get("conclusion") in ("success", "failure") for s in agent_steps):
+                return True
+        elif job.get("name") == DIAGNOSE_JOB_NAME and job.get("conclusion") in ("success", "failure"):
+            return True
+    return False
 
 
 def decide(prs: list[dict], jobs_per_run: list[list[dict]], slug: str) -> tuple[bool, str]:
