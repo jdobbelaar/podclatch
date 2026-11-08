@@ -604,7 +604,7 @@ These are deliberate trade-offs for a single-user app, recorded so they are not 
 - **Features left out on purpose.** There is no sleep timer, no OPML import or export, and no Storage screen (specification sections 8 and 9), no manual Queue editing, and no video podcasts. The server never proxies, caches, or stores podcast audio.
 - **Android Auto is unverified on a head unit.** It was tested through the service and on an emulator only (see Android Auto).
 - **The demo has no sound.** The screen recording comes from a silent emulator, and the demo Episodes are generated tones.
-- **No observability, alerting, or on-call agent yet.** The specification plans them as a later milestone (US-36 to US-38); none of them exists.
+- **The on-call agent has run only against a seeded fault, over a private tunnel.** Observability, the alert, and the on-call agent all exist and were demonstrated end to end (see `docs/oncall-demo.md`), but the demo needs the author's laptop and a Tailscale tunnel. It does not run against a deployed server.
 
 ## How this was built
 
