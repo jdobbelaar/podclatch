@@ -47,7 +47,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM
 ```
 
-If the account already has a GitHub OIDC provider (an account can have only one), add `--parameter-overrides CreateOidcProvider=false ExistingOidcProviderArn=<its ARN>`. The role trusts only `repo:jdobbelaar/podclatch:environment:dev` and `repo:jdobbelaar/podclatch:environment:production`; to use a fork, add `GitHubRepository=<owner>/<name>` to the overrides.
+If the account already has a GitHub OIDC provider (an account can have only one), add `--parameter-overrides CreateOidcProvider=false ExistingOidcProviderArn=<its ARN>`. The role trusts only `<GitHubSubjectPrefix>:environment:dev` and `<GitHubSubjectPrefix>:environment:production`, where the prefix defaults to this repository's OIDC subject, `repo:jdobbelaar@7696911/podclatch@1422992323`. That is GitHub's "immutable subject" form, with the numeric owner and repository IDs, which newer repositories use; the classic `repo:<owner>/<name>` form would be refused by GitHub's token and fail the login with "Not authorized to perform sts:AssumeRoleWithWebIdentity". To use a fork, find the prefix with `gh api repos/<owner>/<name>/actions/oidc/customization/sub` (use `sub_claim_prefix` if `use_immutable_subject` is true, otherwise `repo:<owner>/<name>`) and add `GitHubSubjectPrefix=<prefix>` to the overrides.
 
 Note the three outputs:
 

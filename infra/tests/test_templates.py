@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 INFRA = Path(__file__).resolve().parent.parent
-GITHUB_REPOSITORY = "jdobbelaar/podclatch"
+GITHUB_SUBJECT_PREFIX = "repo:jdobbelaar@7696911/podclatch@1422992323"
 
 
 class _Loader(yaml.SafeLoader):
@@ -348,9 +348,15 @@ def test_deploy_role_is_limited_to_ecr_and_ecs_express_updates(bootstrap):
 
 def test_deploy_role_trust_names_this_repository_only(bootstrap):
     template = bootstrap
-    assert defaults(template)["GitHubRepository"] == GITHUB_REPOSITORY
-    pattern = template["Parameters"]["GitHubRepository"]["AllowedPattern"]
+    # This repository issues OIDC tokens with GitHub's immutable subject (numeric owner and repository
+    # IDs), which is what the default must match; a classic `repo:owner/name` prefix is also accepted.
+    assert defaults(template)["GitHubSubjectPrefix"] == GITHUB_SUBJECT_PREFIX
+    pattern = template["Parameters"]["GitHubSubjectPrefix"]["AllowedPattern"]
     assert "*" not in pattern
+    assert re.fullmatch(pattern, GITHUB_SUBJECT_PREFIX)
+    assert re.fullmatch(pattern, "repo:jdobbelaar/podclatch")
+    for bad in ("repo:*", "repo:jdobbelaar/*", "repo:jdobbelaar/podclatch:environment:dev", "jdobbelaar/podclatch"):
+        assert not re.fullmatch(pattern, bad), bad
     trust = template["Resources"]["DeployRole"]["Properties"]["AssumeRolePolicyDocument"]
     statement = trust["Statement"][0]
     assert statement["Action"] == "sts:AssumeRoleWithWebIdentity"
@@ -358,10 +364,10 @@ def test_deploy_role_trust_names_this_repository_only(bootstrap):
     equals = statement["Condition"]["StringEquals"]
     assert equals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
     subs = [s["Fn::Sub"] for s in equals["token.actions.githubusercontent.com:sub"]]
-    rendered = [s.replace("${GitHubRepository}", GITHUB_REPOSITORY) for s in subs]
+    rendered = [s.replace("${GitHubSubjectPrefix}", GITHUB_SUBJECT_PREFIX) for s in subs]
     assert rendered == [
-        f"repo:{GITHUB_REPOSITORY}:environment:dev",
-        f"repo:{GITHUB_REPOSITORY}:environment:production",
+        f"{GITHUB_SUBJECT_PREFIX}:environment:dev",
+        f"{GITHUB_SUBJECT_PREFIX}:environment:production",
     ]
     assert all("*" not in s for s in rendered)
 
