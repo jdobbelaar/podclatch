@@ -80,13 +80,13 @@ DONE, **US-29**.  "The full system" is the server plus Postgres (plus the teleme
 
 > The application is deployed and reachable at a public URL, or there's a clear demo with the deployment.
 
-NOT DONE: waiting on the author, **US-33** and **US-35**.  The CloudFormation templates, deploy workflows, and runbook are written, but no AWS account has been set up, so nothing is deployed and there is no public URL.  The README states this under "Deployment" and "Known limitations".  The "clear demo" alternative is partly met by the screen recording and the live phone session over Tailscale, which is not a public URL.  To close the gap, follow the AWS setup in the README and set the repository variables the deploy workflows read.
+DONE for `dev`, **US-33** and **US-35** (checked from a laptop; the phone check is pending).  The server was deployed on 2026-11-08 to the author's AWS account on ECS Express Mode with RDS (issue #136; App Runner was the first choice, but AWS no longer lets new accounts create it).  It answers at a public HTTPS address, listed in the README under "Deployment": `/healthz` returns 200, `/v1/feeds` returns 401 without the token and 200 with it.  The address is a throw-away demo that is deleted after grading, so the README and the Deploy run below are the lasting evidence.  Still to do: enter the address and token in the phone app and run a Sync.
 
 ## CI/CD
 
 > CI runs tests, CD deploys to dev, and there's a manual deploy to production. 
 
-PARTLY DONE.  CI runs on every pull request (US-01, US-21).  The rest of the pipeline, **US-34**, is written: automatic deploy to `dev` after merge using GitHub OIDC (no stored AWS keys), and a manual promotion to `prod`.  Those two workflows have never run against a real account, because the AWS setup below has not been done, so the deploy jobs are skipped.
+PARTLY DONE.  CI runs on every pull request (US-01, US-21), and **US-34**'s automatic deploy to `dev` has run against the real account: [Deploy run 42533916732](https://github.com/jdobbelaar/podclatch/actions/runs/42533916732) logged in with GitHub OIDC (no stored AWS keys), pushed the image, pointed the ECS service at it, waited for the rollout, and checked `/healthz`.  The first attempt failed because the deploy role trusted the wrong OIDC subject format; that was fixed in PR #138 and the run passed on retry.  The manual promotion to `prod` is written and tested but has never run: the `prod` stack is not deployed, to save cost, so `PROD_URL` is unset and the Promote job is skipped.
 
 **Your setup list (AWS and GitHub)**, in the order it is needed:
 1. AWS account: enable MFA on the root user, do not use root day to day, and create an admin user or SSO login for yourself.
