@@ -24,7 +24,7 @@ Estimate made on 2026-11-08 for `us-east-1`, from list prices as the author unde
 | CloudWatch logs, ECR storage, and the bootstrap role | pennies |
 | **Total** | **about 58 to 62 dollars** (about 2 dollars a day) |
 
-Two environments cost more, but they share one load balancer. The cheapest path to a working demo is to deploy `dev` only, for the demo and grading, and then tear it down (section 10). `prod` is written and checked but need not be deployed. A monthly budget alert of 30 dollars fires after roughly two weeks of leaving `dev` running.
+Two environments cost more (roughly 40 dollars a month more for `prod`, about 3.40 dollars a day for both), but they share one load balancer. The cheapest path to a working demo is to deploy `dev` only, and then tear it down (section 10). `prod` is optional; it was deployed once, on 2026-11-10, to run the Promote workflow for real. A monthly budget alert of 30 dollars fires after roughly two weeks of leaving `dev` running, sooner with both.
 
 The bootstrap stack itself costs almost nothing. The ECS service and its load balancer, the RDS instance, and the three secrets (the access token, the database password, and the complete `DATABASE_URL`) are created per app stack.
 
