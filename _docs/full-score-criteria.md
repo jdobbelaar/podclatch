@@ -80,7 +80,7 @@ DONE, **US-29**.  "The full system" is the server plus Postgres (plus the teleme
 
 > The application is deployed and reachable at a public URL, or there's a clear demo with the deployment.
 
-DONE for `dev`, **US-33** and **US-35** (checked from a laptop and from the app on an emulator; a physical phone has not been tried).  The server was deployed on 2026-11-08 to the author's AWS account on ECS Express Mode with RDS (issue #136; App Runner was the first choice, but AWS no longer lets new accounts create it).  It answers at a public HTTPS address, listed in the README under "Deployment": `/healthz` returns 200, `/v1/feeds` returns 401 without the token and 200 with it.  The address is a throw-away demo that is deleted after grading, so the README and the Deploy run below are the lasting evidence.  On the emulator, the app's Test connection succeeded against it and a Sync ran (see the README under "Deployment").
+DONE for `dev`, **US-33** and **US-35** (checked from a laptop, from the app on an emulator, and by the author on a physical phone, who reported the test successful).  The server was deployed on 2026-11-08 to the author's AWS account on ECS Express Mode with RDS (issue #136; App Runner was the first choice, but AWS no longer lets new accounts create it).  It answers at a public HTTPS address, listed in the README under "Deployment": `/healthz` returns 200, `/v1/feeds` returns 401 without the token and 200 with it.  The address is a throw-away demo that is deleted after grading, so the README and the Deploy run below are the lasting evidence.  On the emulator, the app's Test connection succeeded against it and a Sync ran (see the README under "Deployment").
 
 ## CI/CD
 
