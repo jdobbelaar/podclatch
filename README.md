@@ -2,7 +2,11 @@
 
 ## Introduction
 
-Podclatch is a personal, single-user podcast player for Android built around a queue that fills itself. The user subscribes to feeds, ranks them by priority, sets a listen order for each feed, and PodClatch downloads and queues episodes automatically.  
+PodClatch is a personal, single-user podcast player for Android built around a queue that fills itself. The user subscribes to feeds, ranks them by priority, sets a listen order for each feed, and PodClatch downloads and queues episodes automatically.  
+
+This app was developed partly as a means to pass a class, and its development process was crafted to align with [the class's document on scoring criteria](https://github.com/DataTalksClub/ai-dev-tools-zoomcamp/tree/main/project#criteria).  
+
+If you are performing peer review, please see the peer review digest file prepared for your convenience at `_docs/peer-review-digest.md`.  
 
 PodClatch has two parts:
 
@@ -11,17 +15,13 @@ PodClatch has two parts:
 
 See `_docs/podclatch-spec.md` for the full product specification.
 
-This app was developed partly as a means to pass a class, and its development process was crafted to align with [the class's document on scoring criteria](https://github.com/DataTalksClub/ai-dev-tools-zoomcamp/tree/main/project#criteria).  
-
+That spec was not based directly on the user's current favorite podcast player; the user simply asked the agent for a spec to build his own podcast player app, and then requested some changes to that generic specification.  
 
 ### The problem being solved
 
 There are a few problems being solved by the creation of this app:
 - The user's current favorite podcast player is no longer maintained nor offered in the Google app store, so the user fears that it will likely become unusable at some point.  
 - That prior app disappoints the user in a few ways, enumerated below, that the user hopes to improve upon.
-
-Since one of the goals of this project was to displace the user's favorite podcast player, it should be noted that the user's current favorite podcast player (referred to herein as "the prior app") was not directly used as the basis of the specification for the new app, except that the behavior of the queue in the new app was indeed designed to mimic the behavior that the user liked in how the user's current favorite app managed its queue. Otherwise, the user simply asked the agent for a spec to build his own podcast player app, and then requested some changes to that generic specification. 
-
 
 #### Disappointments in the other app to be improved upon
 - When a new feed is subscribed, the prior app assigns it last priority. The user wants the opposite. When subscribing to a new feed, the user usually wants to hear episodes from that feed before any others, so the user wants it added with top priority.  
@@ -525,7 +525,7 @@ What the author sets up once (the exact steps are in the comments at the top of 
 
 Checked from a laptop against that address: `GET /healthz` returns 200 with `{"status":"ok"}`; `GET /v1/feeds` returns 401 without the token, 401 with a wrong token, and 200 with the real one (read from Secrets Manager, never written down). The pipeline's update step was also run against the live service: pointing it at a new image kept the environment variables, both secrets, and the size, and the deployment finished in about 7 minutes (Express Mode rolls out in stages).
 
-The debug app was also connected to it on an Android emulator on 2026-11-08: Test connection reported "Connected to" the address above, Save and continue opened the Queue, which synced on its own, and pressing Sync by hand moved "Last synced" forward (6:47:25 PM to 6:47:48 PM). The Queue and Feeds screens are empty because this server holds no subscriptions. On 2026-11-10 the author also tried the app on a physical phone against the deployed AWS server and reported the test successful; the details of what was exercised were not recorded.
+The debug app was also connected to it on an Android emulator on 2026-11-08: Test connection reported "Connected to" the address above, Save and continue opened the Queue, which synced on its own, and pressing Sync by hand moved "Last synced" forward (6:47:25 PM to 6:47:48 PM). The Queue and Feeds screens are empty because this server holds no subscriptions. On 2026-11-10 the author also tried the app on a physical phone against the deployed `prod` server and reported the test successful: Test connection succeeded, and the first Sync replaced the phone's feeds with the server's (none), as a server change does. The author then added feeds and ran a Refresh, which pulled episodes. After switching the app back to the laptop server over Tailscale, Sync restored the feeds that server holds. This is the author's report, with no recording.
 
 **Promoted to `prod` on 2026-11-10**: `https://po-a11dc2f8b0df4fe58166373d7fbffc26.ecs.us-east-1.on.aws`, from the same template with `Environment=prod`. It is deleted after grading with `dev`. The `prod` image tag was first created by hand from the `dev` image so the stack could start. `GET /healthz` returns 200, and `GET /v1/feeds` returns 401 without the token or with a wrong one and 200 with the real one. The Promote workflow then ran twice against it, by hand from `main`:
 
