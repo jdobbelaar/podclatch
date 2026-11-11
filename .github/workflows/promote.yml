@@ -69,9 +69,17 @@ jobs:
             --image-ids "imageDigest=$DIGEST" --output json > "$RUNNER_TEMP/image.json"
           manifest=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["images"][0]["imageManifest"])' "$RUNNER_TEMP/image.json")
           media_type=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["images"][0]["imageManifestMediaType"])' "$RUNNER_TEMP/image.json")
-          aws ecr put-image --repository-name "$ECR_REPOSITORY" --image-tag prod \
-            --image-manifest "$manifest" --image-manifest-media-type "$media_type" > /dev/null
-          echo "Promoted $SHA ($DIGEST) to prod."
+          # ECR refuses to put a tag that already points at this exact image. That is the success case
+          # for a re-run (or an image that is already on prod), so carry on; any other error still fails.
+          if output=$(aws ecr put-image --repository-name "$ECR_REPOSITORY" --image-tag prod \
+              --image-manifest "$manifest" --image-manifest-media-type "$media_type" 2>&1); then
+            echo "Promoted $SHA ($DIGEST) to prod."
+          elif printf '%s' "$output" | grep -q 'ImageAlreadyExistsException'; then
+            echo "The prod tag already points at $SHA ($DIGEST); nothing to retag."
+          else
+            printf '%s\n' "$output" >&2
+            exit 1
+          fi
 
       - name: Point the service at that image
         env:
