@@ -41,3 +41,6 @@ android/gradle/gradle-daemon-jvm.properties
 
 # Python bytecode
 __pycache__/
+
+# backup of feed data from phone
+podclatch-backup.sql
