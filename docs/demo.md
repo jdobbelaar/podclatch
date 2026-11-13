@@ -4,7 +4,7 @@ This is a walkthrough of PodClatch in use: the Android app talking to PodClatch 
 
 **What you are looking at, honestly.**
 
-- It was recorded on an Android emulator (a Pixel-sized virtual device running Android 17) against a **local** server on the author's machine, started with Docker Compose in its own project. It is **not** the deployed server (nothing is deployed yet; the last section is the place for that).
+- It was recorded on an Android emulator (a Pixel-sized virtual device running Android 17) against a **local** server on the author's machine, started with Docker Compose in its own project. It is **not** the deployed server (which has since been shut down; the last section explains).
 - The Feeds are made up. They are served by a small fake feed host, the Episodes are generated tones, the artwork is a plain coloured square, and the search directory is a fake that always answers with the same four podcasts. No real feed address, access token, or personal data appears in any image or in the video.
 - The video has **no sound**: the emulator is silent.
 
@@ -145,4 +145,4 @@ You need Docker, Python 3, an emulator, and `adb`. Use your **own** Compose proj
 
 ## Against the deployed server
 
-`TODO(human)`: nothing is deployed yet, so there is no recording of the app talking to a deployed server. After you deploy `dev` (see Deployment in the [README](../README.md) and [infra/README.md](../infra/README.md)), replace this paragraph with a short screen recording, or annotated screenshots, of the app talking to the `https://...awsapprunner.com` address: **Test connection** on the connection screen, a **Sync**, and playing an Episode. You can also record a real phone with sound. Then put a link to it here and in the README's Demo section. Do not paste the access token into the recording; the token field is masked, so leave it that way.
+There is no recording of the app talking to a deployed server. The server was deployed to AWS and the app was checked against it (the README's Deployment section records the results, including a test on a physical phone), but the deployment was shut down on 2026-11-13 to avoid the ongoing cost, so there is nothing left to record against. The product will be updated later to work without a server component.
