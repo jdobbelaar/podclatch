@@ -6,7 +6,7 @@ For reviewers scoring this project against the course's 12 criteria. For each on
 
 **Tracker:** GitHub Issues and milestones in `jdobbelaar/podclatch` (60 issues, milestones M0 to M10, all closed).
 
-**Known gaps, stated up front:** both deployed servers (`dev` and `prod`) are deleted after grading, so their URLs will stop working. The lasting evidence for deployment is the README and the linked workflow runs.
+**Known gaps, stated up front:** the deployment worked, and both servers (`dev` and `prod`) were shut down on 2026-11-13 to avoid roughly 3.40 dollars a day, so their URLs no longer answer. The product will be updated later to work without a server component. The lasting evidence for deployment is the README, the templates, and the linked workflow runs.
 
 ## At a glance
 
@@ -97,13 +97,13 @@ For reviewers scoring this project against the course's 12 criteria. For each on
 
 **Criterion:** the application is deployed and reachable at a public URL, or there is a clear demo of the deployment.
 
-**How it is met:** the server runs on AWS (ECS Express Mode with RDS Postgres) behind public HTTPS addresses, as two stacks from one template: `dev` (deployed 2026-11-08) and `prod` (promoted 2026-11-10).
-- `dev`: <https://po-aac25f44f7414515a82e9ca2fcf84e02.ecs.us-east-1.on.aws>
-- `prod`: <https://po-a11dc2f8b0df4fe58166373d7fbffc26.ecs.us-east-1.on.aws>
+**How it is met:** the server ran on AWS (ECS Express Mode with RDS Postgres) behind public HTTPS addresses (now shut down, as described below), as two stacks from one template: `dev` (deployed 2026-11-08) and `prod` (promoted 2026-11-10).
+- `dev` (deleted): `https://po-aac25f44f7414515a82e9ca2fcf84e02.ecs.us-east-1.on.aws`
+- `prod` (deleted): `https://po-a11dc2f8b0df4fe58166373d7fbffc26.ecs.us-east-1.on.aws`
 
-On `dev`, `/healthz` returns 200, and `/v1/feeds` returns 401 without the token and 200 with it. The Android app was connected to `dev` on an emulator: Test connection succeeded and a Sync ran.
+While it was live, on `dev`, `/healthz` returned 200, and `/v1/feeds` returned 401 without the token and 200 with it. The Android app was connected to `dev` on an emulator: Test connection succeeded and a Sync ran.
 
-**The URLs are temporary.** Both stacks are deleted after grading. If they no longer answer, rely on the written record and the workflow runs below.
+**The URLs no longer answer.** Both stacks were deleted on 2026-11-13 to stop the ongoing cost. Rely on the written record and the workflow runs below, which were made while the deployment was live.
 
 **Evidence:**
 - `README.md` "Deployment" (address, the checks, and the emulator test, with times).

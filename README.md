@@ -53,7 +53,7 @@ The terms below are the ones the app, the server, and the specification use: a *
 - Fetches and parses RSS feeds, discovers Episodes, and Refreshes every Feed on a schedule (every 3 hours by default), whether or not the app is running.
 - Stores subscriptions, Feed Priority, Listen Order, and each Episode's New or Played state and position, and answers the app's Sync.
 - Protects everything with one static bearer token. It never fetches, stores, or serves podcast audio.
-- Runs on SQLite by default and on Postgres in Docker Compose and on AWS, and ships as a container image.
+- Runs on SQLite by default and on Postgres in Docker Compose, and ships as a container image. It also ran on AWS until 2026-11-13 (see [Deployment](#deployment)).
 
 ## Screenshots
 
@@ -69,7 +69,7 @@ These are real captures from an Android emulator, taken against a local server w
 
 [docs/demo.md](docs/demo.md) is a ten-step annotated walkthrough: connect, Sync, search, subscribe, open the Feed, play an Episode, look at the Queue, and mark an Episode Played, with the server call behind each step. [docs/demo/walkthrough.mp4](docs/demo/walkthrough.mp4) is a 58-second screen recording of the same flow.
 
-Both were recorded on an emulator against a local server on the author's machine, **without sound**. They do not show the deployed server, because nothing is deployed yet (see [Deployment](#deployment)).
+Both were recorded on an emulator against a local server on the author's machine, **without sound**. They do not show the deployed server, which has since been shut down (see [Deployment](#deployment)).
 
 ## Architecture
 
@@ -106,7 +106,7 @@ flowchart LR
 
 Feeds go in through the server, but audio never does: the app downloads or streams it straight from the publisher, and the server neither stores nor serves audio. Only repositories call the server API, and the Room cache lets everything except the server-backed actions work offline.
 
-The delivery path, from a push to `main` to a running server (this is built and checked, but nothing has been deployed to AWS; see [Deployment](#deployment)):
+The delivery path, from a push to `main` to a running server (this ran for real against AWS, but the AWS deployment was shut down on 2026-11-13 to stop the cost; see [Deployment](#deployment)):
 
 ```mermaid
 flowchart LR
@@ -509,7 +509,7 @@ All workflows are in `.github/workflows/`.
 | Promote (`promote.yml`) | By hand only | Moves the `prod` tag to the image that currently carries `dev` (no rebuild), points the service at that image, waits for the deployment to finish, and checks `/healthz` |
 | Release APK (`release-apk.yml`) | When a tag starting with `v` is pushed | Builds a signed release APK and attaches it to a GitHub Release |
 
-**Until you configure AWS, Deploy and Promote are skipped, not failed.** Their jobs only run when the repository variable `AWS_DEPLOY_ROLE_ARN` is set (and, for Promote, `PROD_URL`), so `main` stays green. The AWS login uses GitHub's OpenID Connect, so no AWS key is stored anywhere. **Release APK** fails on purpose, with a clear message, if a tag is pushed without the signing secrets.
+**Without AWS configured, Deploy and Promote are skipped, not failed, which is the state now that the deployment is shut down.** Their jobs only run when the repository variable `AWS_DEPLOY_ROLE_ARN` is set (and, for Promote, `PROD_URL`), so `main` stays green. The AWS login uses GitHub's OpenID Connect, so no AWS key is stored anywhere. **Release APK** fails on purpose, with a clear message, if a tag is pushed without the signing secrets.
 
 What the author sets up once (the exact steps are in the comments at the top of each workflow file, and the `TODO(human)` items in [Get the app](#get-the-app)):
 
@@ -521,25 +521,27 @@ What the author sets up once (the exact steps are in the comments at the top of 
 
 ## Deployment
 
-**Deployed to `dev` on 2026-11-08** in the author's AWS account (`us-east-1`): `https://po-aac25f44f7414515a82e9ca2fcf84e02.ecs.us-east-1.on.aws`. It is a throw-away demo that is deleted after grading, so the address stops working then.
+> **Shut down on 2026-11-13.** The deployment described below worked, and was verified as recorded here, but the author deleted every AWS stack on 2026-11-13 to avoid the ongoing cost (about 3.40 dollars a day). The two addresses below no longer answer. The repository variables that pointed the pipeline at AWS were removed at the same time, so Deploy and Promote are skipped. The product will be updated later to work without a server component. The workflow runs, the templates, and the records below are what remains as evidence.
+
+**Deployed to `dev` on 2026-11-08** in the author's AWS account (`us-east-1`): `https://po-aac25f44f7414515a82e9ca2fcf84e02.ecs.us-east-1.on.aws` (now deleted).
 
 Checked from a laptop against that address: `GET /healthz` returns 200 with `{"status":"ok"}`; `GET /v1/feeds` returns 401 without the token, 401 with a wrong token, and 200 with the real one (read from Secrets Manager, never written down). The pipeline's update step was also run against the live service: pointing it at a new image kept the environment variables, both secrets, and the size, and the deployment finished in about 7 minutes (Express Mode rolls out in stages).
 
 The debug app was also connected to it on an Android emulator on 2026-11-08: Test connection reported "Connected to" the address above, Save and continue opened the Queue, which synced on its own, and pressing Sync by hand moved "Last synced" forward (6:47:25 PM to 6:47:48 PM). The Queue and Feeds screens are empty because this server holds no subscriptions. On 2026-11-10 the author also tried the app on a physical phone against the deployed `prod` server and reported the test successful: Test connection succeeded, and the first Sync replaced the phone's feeds with the server's (none), as a server change does. The author then added feeds and ran a Refresh, which pulled episodes. After switching the app back to the laptop server over Tailscale, Sync restored the feeds that server holds. This is the author's report, with no recording.
 
-**Promoted to `prod` on 2026-11-10**: `https://po-a11dc2f8b0df4fe58166373d7fbffc26.ecs.us-east-1.on.aws`, from the same template with `Environment=prod`. It is deleted after grading with `dev`. The `prod` image tag was first created by hand from the `dev` image so the stack could start. `GET /healthz` returns 200, and `GET /v1/feeds` returns 401 without the token or with a wrong one and 200 with the real one. The Promote workflow then ran twice against it, by hand from `main`:
+**Promoted to `prod` on 2026-11-10**: `https://po-a11dc2f8b0df4fe58166373d7fbffc26.ecs.us-east-1.on.aws` (now deleted), from the same template with `Environment=prod`. It was deleted with `dev` on 2026-11-13. The `prod` image tag was first created by hand from the `dev` image so the stack could start. `GET /healthz` returns 200, and `GET /v1/feeds` returns 401 without the token or with a wrong one and 200 with the real one. The Promote workflow then ran twice against it, by hand from `main`:
 
 - [Run 1](https://github.com/jdobbelaar/podclatch/actions/runs/42939304989) was a real promotion: it moved the `prod` tag to the image running on `dev` (`a17ee8f`), pointed the prod service at it, waited for the rollout, and checked `/healthz`.
 - [Run 2](https://github.com/jdobbelaar/podclatch/actions/runs/42940858744) repeated the same image and passed through the "tag already points here" path.
 
 The very first Promote run (42936622544) failed at the retag step, because the `prod` tag already pointed at the chosen image and ECR refuses to put an identical tag; PR #140 made that case a success. No required reviewer gates Promote, because environment reviewers need a public repository or a paid plan: running the workflow by hand is the gate.
 
-The first attempt used AWS App Runner and failed, because AWS no longer lets new accounts create App Runner services; the design now uses ECS Express Mode (issue #136). To deploy again, follow [infra/README.md](infra/README.md): the account setup and budget alert (section 2), the bootstrap stack (section 3), the first image (section 4), and the `podclatch-dev` stack (section 5), then the same stack command with `Environment=prod` and a `prod` image tag for production.
+The first attempt used AWS App Runner and failed, because AWS no longer lets new accounts create App Runner services; the design now uses ECS Express Mode (issue #136). To deploy again (the templates are unchanged and still work), follow [infra/README.md](infra/README.md): the account setup and budget alert (section 2), the bootstrap stack (section 3), the first image (section 4), and the `podclatch-dev` stack (section 5), then the same stack command with `Environment=prod` and a `prod` image tag for production.
 
 What the templates build, so you know what you are agreeing to:
 
 - **Shape.** The server runs on Amazon ECS Express Mode (one Fargate task behind a managed load balancer), which gives an HTTPS address with a valid certificate and no domain name, and the data lives in Amazon RDS for PostgreSQL (`db.t4g.micro`, one Availability Zone, 20 GB). The three secrets (the access token, the database password, and the database URL) live in AWS Secrets Manager. There are two stacks from one template, `podclatch-dev` and `podclatch-prod`.
-- **Cost.** About **58 to 62 US dollars per month** (about 2 dollars a day) for `dev` while it runs, most of it the load balancer, the public IPv4 addresses, and the database, and about **40 dollars more** for `prod`, which shares the load balancer (about 3.40 dollars a day for both). This is an estimate from list prices, not checked against a bill. App Runner would have cost less, but AWS closed it to new accounts. The cheapest path is to deploy `dev` only; both stacks are deployed now for grading and are torn down afterwards (section 10 of `infra/README.md`, where `prod` has extra steps because its database has deletion protection and leaves a final snapshot).
+- **Cost.** About **58 to 62 US dollars per month** (about 2 dollars a day) for `dev` while it runs, most of it the load balancer, the public IPv4 addresses, and the database, and about **40 dollars more** for `prod`, which shares the load balancer (about 3.40 dollars a day for both). This is an estimate from list prices, not checked against a bill. App Runner would have cost less, but AWS closed it to new accounts. The cheapest path is to deploy `dev` only; both stacks were torn down on 2026-11-13 (section 10 of `infra/README.md`, where `prod` has extra steps because its database has deletion protection and leaves a final snapshot).
 - **HTTPS is required.** A release build of the app refuses plain `http://` to any address other than `localhost`, `127.0.0.1`, and `10.0.2.2`, which is why a bare server address would not work with it. Express Mode's managed load balancer supplies the certificate.
 - **The database is reachable from the internet.** The service's tasks run in public subnets and get public addresses that change, so the database allows connections from anywhere, protected by forced TLS and a long generated password. This is a demo trade-off for a single-user, throw-away deployment, not something to leave running.
 - **Always on, one task.** The service runs a single task all the time, so the server's own scheduled Refresh runs; the cost above is for leaving it running.
@@ -611,13 +613,13 @@ These are deliberate trade-offs for a single-user app, recorded so they are not 
 - **One user, one server.** There are no accounts, only one access token, and the app talks to exactly one server. Changing the server clears the local cache and downloads.
 - **HTTPS for a release build.** A release build refuses plain `http://` to any address other than `localhost`, `127.0.0.1`, and `10.0.2.2`. A server on a LAN address over `http://` works in a debug build only.
 - **Android 17 and the local network.** On Android 17 (API 37) and newer, connecting to a private-network address needs the "Local network access" permission, which the app asks for. If you refuse it, servers on the local network will not work (the `adb reverse` path to `127.0.0.1` is not affected).
-- **The deployed server costs about 2 dollars a day.** It runs one task behind a load balancer all the time and cannot be paused, only deleted (see Deployment and section 10 of `infra/README.md`).
-- **The deployed database is open to the internet.** It sits behind forced TLS and a long random password, which is a demo trade-off (see Deployment).
-- **The deployed server is temporary, and there is no signed release APK.** The `dev` server runs only until grading (see Deployment), and the phone test against it is recorded above. A signed release build exists only if you make one (see Signed release APK).
+- **The server is not deployed.** The AWS deployment cost about 2 dollars a day (3.40 with `prod`) because it ran one task behind a load balancer all the time and could not be paused, only deleted, so it was deleted on 2026-11-13 (see Deployment). The app and server still run locally with Docker Compose, and a later version of the product will work without a server component.
+- **The AWS template leaves the database open to the internet.** It sits behind forced TLS and a long random password, which is a demo trade-off (see Deployment). Nothing is running now, but keep this in mind before deploying the template again.
+- **There is no signed release APK, and a phone cannot reach a hosted server.** The hosted server is shut down (see Deployment), and the phone test against it is recorded above as a past result. A signed release build exists only if you make one (see Signed release APK), and it needs an HTTPS server to be of use.
 - **Features left out on purpose.** There is no sleep timer, no OPML import or export, and no Storage screen (specification sections 8 and 9), no manual Queue editing, and no video podcasts. The server never proxies, caches, or stores podcast audio.
 - **Android Auto is unverified on a head unit.** It was tested through the service and on an emulator only (see Android Auto).
 - **The demo has no sound.** The screen recording comes from a silent emulator, and the demo Episodes are generated tones.
-- **The on-call agent has run only against a seeded fault, over a private tunnel.** Observability, the alert, and the on-call agent all exist and were demonstrated end to end (see `docs/oncall-demo.md`), but the demo needs the author's laptop and a Tailscale tunnel. It does not run against a deployed server.
+- **The on-call agent has run only against a seeded fault, over a private tunnel.** Observability, the alert, and the on-call agent all exist and were demonstrated end to end (see `docs/oncall-demo.md`), but the demo needs the author's laptop and a Tailscale tunnel. It does not run against a hosted server.
 
 ## How this was built
 
@@ -637,6 +639,5 @@ Delete this section after submitting. Only the author can do these.
 - [ ] Make the repository public. First check the history for secrets and feed URLs: `git log --all -p | grep -i -E "token|secret|password|bearer"` and a search of all issues and comments for feed URLs with embedded tokens; rotate anything that leaked. Required reviewers on the `production` environment only work for public repositories.
 - [ ] The task tracker is public and shows the agents' evidence: every issue has the PM, engineer, QA, and orchestrator comments, and every pull request says `Closes #n`.
 - [ ] Review three other projects on the course platform. The class requires this; the project fails without it, whatever its score.
-- [ ] Set the AWS budget alert, deploy `dev`, record the demo against it, then tear it down after grading (`infra/README.md`).
 - [ ] Remove the DRAFT banners from `AGENTS.md`, `_docs/process.md`, and `_docs/team/*` if they are still there (`_docs/full-score-criteria.md` notes this).
 - [ ] Submit the repository link on the course platform.
